@@ -404,7 +404,6 @@
             border: 1px solid #2a3b55;
             border-radius: 8px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            margin-bottom: 50px;
             max-height: 800px;
             overflow-y: auto;
         }
@@ -566,6 +565,16 @@
             color: #666;
             padding: 10px 15px;
             text-align: right;
+        }
+
+        .messageinfo-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #161b29;
+            border: 1px solid #2a3b55;
+            border-top: none;
         }
     </style>
 </head>
@@ -741,7 +750,9 @@
                     <tbody id="tableBody"></tbody>
                 </table>
             </div>
-            <div class="status-bar" id="statusBar">共加载 0 条数据</div>
+            <div class="messageinfo-bar">
+                <div id="messageInfo" style="color:#889eb5">当前显示 x 条数据 (总共 x 条)</div>
+            </div>
         </div>
     </div>
 
@@ -1234,7 +1245,7 @@
     }
 
     function renderTable() {
-        const tb = document.getElementById('tableBody'), st = document.getElementById('statusBar');
+        const tb = document.getElementById('tableBody'), st = document.getElementById('messageInfo');
         if (tableFilteredData.length === 0) {
             tb.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:#666">无数据</td></tr>';
             st.innerText = '共 0 条';
