@@ -2,16 +2,18 @@ from flask import Flask, render_template, request, jsonify
 import pymysql
 import pandas as pd
 import datetime
-
 from juhe import juhe_bp, init_city_cache, calculate_trend
+from user_report import user_report_bp
+
 
 app = Flask(__name__)
 
 app.register_blueprint(juhe_bp)
+app.register_blueprint(user_report_bp)
 
 DB_NICEBOT = {"host": "127.0.0.1", "user": "root",
               "password": "31305a0fbd", "database": "nicebot", "charset": "utf8mb4"}
-DB_TIKTOK = {"host": "104.224.157.239", "user": "root",
+DB_TIKTOK = {"host": "127.0.0.1", "user": "root",
              "password": "31305a0fbd", "database": "tiktok_bot", "charset": "utf8mb4"}
 
 init_city_cache()
