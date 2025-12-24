@@ -1251,7 +1251,7 @@
                 <td class="col-time">${r.time}</td>
                 <td class="col-plat">${ico} ${r.platform}</td>
                 <td class="col-type"><span class="badge ${r.type === '关注' ? 'type-follow' : 'type-like'}">${r.type}</span></td>
-                <td class="col-user">${r.user_url ? `<a href="${r.user_url}" target="_blank" class="btn-link">${r.username}</a>` : ''}</td>
+                <td class="col-user">${r.username ? `<a href="/board/user/${r.username}" target="_blank" class="btn-link">${r.username}</a>` : ''}</td>
                 <td class="col-content" title="${r.caption}">${r.caption || ''}</td>
                 <td class="col-text" title="${r.text}">${r.text || ''}</td>
                 <td class="col-link">${r.url ? `<a href="${r.url}" target="_blank" class="btn-link">${r.url}</a>` : ''}</td></tr>`;
