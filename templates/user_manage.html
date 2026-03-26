@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>User 表管理</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #fff;
+            font-family: 'Segoe UI', Roboto, "Microsoft YaHei", sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #2a3b55;
+            padding-bottom: 15px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 28px;
+        }
+
+        h1 span {
+            color: #00f2ff;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            background: #161b29;
+            border: 1px solid #2a3b55;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            min-width: 260px;
+            gap: 8px;
+        }
+
+        .search-box input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        .btn {
+            border: 1px solid #00f2ff;
+            background: transparent;
+            color: #00f2ff;
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background: #00f2ff;
+            color: #000;
+        }
+
+        .table-container {
+            border: 1px solid #2a3b55;
+            border-radius: 8px;
+            overflow: auto;
+            background: #121829;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 760px;
+        }
+
+        th,
+        td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #20283b;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        th {
+            color: #00f2ff;
+            position: sticky;
+            top: 0;
+            background: #161b29;
+            z-index: 1;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #2a3b55;
+            border-radius: 4px;
+            background: #0f1524;
+            color: #fff;
+            padding: 6px 8px;
+        }
+
+        .btn-save {
+            border: 1px solid #00ff9d;
+            color: #00ff9d;
+            background: transparent;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-save:hover {
+            background: rgba(0, 255, 157, 0.15);
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            color: #9fb3d1;
+            font-size: 13px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .pill {
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        .pill-ok {
+            color: #00ff9d;
+            background: rgba(0, 255, 157, 0.12);
+        }
+
+        .pill-err {
+            color: #ff7b7b;
+            background: rgba(255, 123, 123, 0.12);
+        }
+    </style>
+</head>
+
+<body>
+<div class="header">
+    <h1>👤 User<span>Table</span> 管理</h1>
+    <div class="toolbar">
+        <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input id="searchInput" type="text" placeholder="按 USERID 或 USERNAME 搜索" oninput="applyFilter()">
+        </div>
+        <button class="btn" onclick="loadUsers()"><i class="fas fa-rotate"></i> 刷新</button>
+        <a class="btn" href="/">← 返回主页</a>
+    </div>
+</div>
+
+<div class="table-container">
+    <table>
+        <thead>
+        <tr>
+            <th style="width:60px;">#</th>
+            <th style="width:180px;">USERID</th>
+            <th>USERNAME</th>
+            <th style="width:150px;">valid</th>
+            <th style="width:110px;">操作</th>
+        </tr>
+        </thead>
+        <tbody id="userTableBody"></tbody>
+    </table>
+</div>
+
+<div class="status-bar">
+    <div id="summary">共 0 条记录</div>
+    <div id="hint">支持修改 USERNAME 与 valid，点击“保存”提交。</div>
+    <div id="resultPill" class="pill" style="display:none;"></div>
+</div>
+
+<script>
+    let rawUsers = [];
+    let shownUsers = [];
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>'"]/g, m => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[m]));
+    }
+
+    async function loadUsers() {
+        const pill = document.getElementById('resultPill');
+        pill.style.display = 'none';
+        const res = await fetch('/api/niceme/users');
+        const json = await res.json();
+        rawUsers = json.data || [];
+        applyFilter();
+    }
+
+    function applyFilter() {
+        const kw = document.getElementById('searchInput').value.trim().toLowerCase();
+        shownUsers = rawUsers.filter(u => {
+            if (!kw) return true;
+            return String(u.USERID).toLowerCase().includes(kw) || String(u.USERNAME || '').toLowerCase().includes(kw);
+        });
+        renderTable();
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('userTableBody');
+        if (shownUsers.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#778;">暂无数据</td></tr>';
+        } else {
+            tbody.innerHTML = shownUsers.map((u, idx) => `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td>${escapeHtml(u.USERID)}</td>
+                    <td><input type="text" id="username-${u.USERID}" value="${escapeHtml(u.USERNAME || '')}"></td>
+                    <td><input type="number" id="valid-${u.USERID}" value="${u.valid ?? 0}"></td>
+                    <td><button class="btn-save" onclick="saveUser('${String(u.USERID).replace(/'/g, "\\'")}')">保存</button></td>
+                </tr>
+            `).join('');
+        }
+        document.getElementById('summary').innerText = `当前显示 ${shownUsers.length} 条 / 总计 ${rawUsers.length} 条`;
+    }
+
+    async function saveUser(userId) {
+        const username = document.getElementById(`username-${userId}`).value.trim();
+        const validRaw = document.getElementById(`valid-${userId}`).value;
+        const validNum = Number(validRaw);
+
+        if (!Number.isFinite(validNum)) {
+            showPill('valid 必须是数字', false);
+            return;
+        }
+
+        const res = await fetch(`/api/niceme/users/${encodeURIComponent(userId)}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({USERNAME: username, valid: validNum})
+        });
+        const json = await res.json();
+        if (json.status === 'success') {
+            showPill(`USERID ${userId} 保存成功`, true);
+            rawUsers = rawUsers.map(u => String(u.USERID) === String(userId) ? {...u, USERNAME: username, valid: validNum} : u);
+            applyFilter();
+        } else {
+            showPill(json.msg || '保存失败', false);
+        }
+    }
+
+    function showPill(msg, ok) {
+        const pill = document.getElementById('resultPill');
+        pill.style.display = 'inline-block';
+        pill.className = `pill ${ok ? 'pill-ok' : 'pill-err'}`;
+        pill.innerText = msg;
+    }
+
+    loadUsers();
+</script>
+</body>
+
+</html>
