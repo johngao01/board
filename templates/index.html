@@ -717,6 +717,7 @@
                     <option value="抖音">抖音</option>
                     <option value="微博">微博</option>
                     <option value="Instagram">Instagram</option>
+                    <option value="B站">B站</option>
                 </select>
                 <select id="typeFilter" class="filter-select" onchange="saveAndApplyFilters()">
                     <option value="">所有类型</option>
@@ -1256,6 +1257,7 @@
             if (r.platform === '抖音') ico = '<i class="fab fa-tiktok plat-icon c-douyin"></i>';
             if (r.platform === '微博') ico = '<i class="fab fa-weibo plat-icon c-weibo"></i>';
             if (r.platform === 'Instagram') ico = '<i class="fab fa-instagram plat-icon c-ins"></i>';
+            if (r.platform === 'B站') ico = '<i class="fab fa-bilibili plat-icon c-ins"></i>';
             return `<tr>
                 <td class="col-no">${i + 1}</td>
                 <td class="col-id">${r.id}</td>

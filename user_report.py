@@ -20,7 +20,7 @@ DB_CONFIG = {
 }
 
 
-def get_platform(url):
+def detect_platform(url):
     if not isinstance(url, str):
         return "其他"
     url_l = url.lower()
@@ -30,6 +30,8 @@ def get_platform(url):
         return "抖音"
     if "instagram" in url_l:
         return "Instagram"
+    if 'bilibili' in url_l:
+        return 'B站'
     return "其他"
 
 
@@ -43,7 +45,21 @@ def process_messages_df(df):
             file_type = "视频"
         elif caption.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
             file_type = "图片"
-
+        user_url = ''
+        url = row['URL']
+        userid = row['USERID']
+        if "weibo" in url:
+            platform = "微博"
+            user_url = f"https://weibo.com/u/{userid}"
+        elif "douyin" in url:
+            platform = "抖音"
+            user_url = f"https://douyin.com/user/{userid}"
+        elif "instagram" in url:
+            platform = "Instagram"
+            user_url = f"https://instagram.com/{userid}"
+        elif 'bilibili' in url:
+            platform = 'B站'
+            user_url = 'https://space.bilibili.com/{userid}'
         # 转换显示时间 (+8h)
         local_time = pd.to_datetime(
             row['DATE_TIME']) + datetime.timedelta(hours=8)
@@ -51,8 +67,9 @@ def process_messages_df(df):
         res.append({
             "id": row['MESSAGE_ID'],
             "time": local_time.strftime('%Y-%m-%d %H:%M:%S'),
+            "user_url": user_url,
             "username": row['USERNAME'] or "未知",
-            "platform": get_platform(row['URL']),
+            "platform": detect_platform(row['URL']),
             "text": row['TEXT_RAW'] or "",
             "url": row['URL'],
             "file_type": file_type,
@@ -87,7 +104,7 @@ def api_user_report():
             return jsonify({"status": "empty", "msg": "未找到相关数据"})
 
         # 2. 统计基础逻辑
-        df['platform'] = df['URL'].apply(get_platform)
+        df['platform'] = df['URL'].apply(detect_platform)
         df['local_time'] = pd.to_datetime(
             df['DATE_TIME']) + datetime.timedelta(hours=8)
         df['day_str'] = df['local_time'].dt.strftime('%Y-%m-%d')

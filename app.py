@@ -3,7 +3,7 @@ import pymysql
 import pandas as pd
 import datetime
 from juhe import juhe_bp, init_city_cache, calculate_trend
-from user_report import user_report_bp
+from user_report import user_report_bp, detect_platform
 
 
 app = Flask(__name__)
@@ -90,17 +90,6 @@ def api_niceme():
         curr_v, curr_i = count_files(df_curr["CAPTION"])
         prev_v, prev_i = count_files(df_prev["CAPTION"])
 
-        def detect_platform(url):
-            if not isinstance(url, str):
-                return "其他"
-            if "weibo" in url:
-                return "微博"
-            if "douyin" in url:
-                return "抖音"
-            if "instagram" in url:
-                return "Instagram"
-            return "其他"
-
         # 1. 消息分布 (基于所有消息)
         df_curr["platform"] = df_curr["URL"].apply(detect_platform)
         msg_platform_data = df_curr["platform"].value_counts().to_dict()
@@ -177,17 +166,6 @@ def api_works_dist():
         if df.empty:
             return jsonify({"total": 0, "platforms": {}, "types": {}, "prev_str": "0/0"})
 
-        def detect_platform(url):
-            if not isinstance(url, str):
-                return "其他"
-            if "weibo" in url:
-                return "微博"
-            if "douyin" in url:
-                return "抖音"
-            if "instagram" in url:
-                return "Instagram"
-            return "其他"
-
         df['type'] = df['valid'].apply(
             lambda x: '关注' if (pd.notnull(x) and x > 0) else '喜欢')
         df['platform'] = df['URL'].apply(detect_platform)
@@ -259,6 +237,9 @@ def list_niceme_messages():
             elif "instagram" in url:
                 platform = "Instagram"
                 user_url = f"https://instagram.com/{row['userid']}"
+            elif 'bilibili' in url:
+                platform = 'B站'
+                user_url = 'https://space.bilibili.com/{userid}'
 
             valid = row['valid']
             msg_type = "关注" if (pd.notnull(valid) and valid > 0) else "喜欢"

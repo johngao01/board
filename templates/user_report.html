@@ -710,13 +710,14 @@
                 if (r.platform === '抖音') ico = '<i class="fab fa-tiktok plat-icon c-douyin"></i>';
                 if (r.platform === '微博') ico = '<i class="fab fa-weibo plat-icon c-weibo"></i>';
                 if (r.platform === 'Instagram') ico = '<i class="fab fa-instagram plat-icon c-ins"></i>';
+                if (r.platform === 'B站') ico = '<i class="fab fa-bilibili plat-icon c-ins"></i>';
                 return `<tr>
                 <td style="color:#555">${i + 1}</td>
                 <td class="col-id">${r.id}</td>
                 <td style="color:#aaa; font-family:monospace;">${r.time}</td>
                 <td>${ico} ${r.platform}</td>
                 <td><span class="badge ${tCls}">${r.file_type}</span></td>
-                <td><strong>${r.username}</strong></td>
+                <td>${r.username ? `<a href="${r.user_url}" target="_blank" class="btn-link">${r.username}</a>` : ''}</td>
                 <td title="${r.caption || '-'}">${r.caption || '-'}</td>
                 <td title="${r.text || '-'}">${r.text || '-'}</td>
                 <td><a href="${r.url}" target="_blank" class="btn-link" title="${r.url}">${r.url}</a></td>
