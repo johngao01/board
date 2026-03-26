@@ -29,6 +29,11 @@ def juhe_page():
     return render_template('juhe.html')
 
 
+@app.route('/user_manage')
+def user_manage_page():
+    return render_template('user_manage.html')
+
+
 # ==========================================
 #               NiceBot 接口
 # ==========================================
@@ -262,6 +267,64 @@ def list_niceme_messages():
                 "url": url
             })
         return jsonify({"data": result})
+    finally:
+        conn.close()
+
+
+@app.route('/api/niceme/users')
+def list_niceme_users():
+    conn = pymysql.connect(**DB_NICEBOT)
+    try:
+        keyword = request.args.get('keyword', '').strip()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        if keyword:
+            sql = """SELECT USERID, USERNAME, valid
+                     FROM user
+                     WHERE CAST(USERID AS CHAR) LIKE %s OR USERNAME LIKE %s
+                     ORDER BY USERID DESC"""
+            kw_like = f"%{keyword}%"
+            cursor.execute(sql, (kw_like, kw_like))
+        else:
+            sql = """SELECT USERID, USERNAME, valid
+                     FROM user
+                     ORDER BY USERID DESC"""
+            cursor.execute(sql)
+
+        return jsonify({"status": "success", "data": cursor.fetchall()})
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e), "data": []}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/niceme/users/<string:user_id>', methods=['PUT'])
+def update_niceme_user(user_id):
+    payload = request.get_json(silent=True) or {}
+    username = payload.get('USERNAME')
+    valid = payload.get('valid')
+
+    if username is None or valid is None:
+        return jsonify({"status": "error", "msg": "USERNAME 和 valid 为必填字段"}), 400
+
+    try:
+        valid_num = int(valid)
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "msg": "valid 必须是整数"}), 400
+
+    conn = pymysql.connect(**DB_NICEBOT)
+    try:
+        cursor = conn.cursor()
+        sql = "UPDATE user SET USERNAME = %s, valid = %s WHERE USERID = %s"
+        cursor.execute(sql, (str(username).strip(), valid_num, user_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "msg": "用户不存在或数据未变化"}), 404
+
+        return jsonify({"status": "success"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"status": "error", "msg": str(e)}), 500
     finally:
         conn.close()
 

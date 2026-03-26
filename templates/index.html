@@ -106,6 +106,23 @@
             box-shadow: 0 0 10px #00f2ff;
         }
 
+        .btn-nav {
+            background: transparent;
+            border: 1px solid #00f2ff;
+            color: #00f2ff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+
+        .btn-nav:hover {
+            background: #00f2ff;
+            color: #000;
+        }
+
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -589,6 +606,7 @@
             <input type="date" id="datePicker" onchange="handleDateChange()">
             <button class="btn-arrow" onclick="adjustDate(1)">❯</button>
         </div>
+        <a class="btn-nav" href="/user_manage">User表管理</a>
         <button class="btn-today" onclick="goToToday()">今天</button>
     </div>
 </div>
