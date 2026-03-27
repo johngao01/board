@@ -204,7 +204,7 @@
     async function loadUsers() {
         const pill = document.getElementById('resultPill');
         pill.style.display = 'none';
-        const res = await fetch('/api/niceme/users');
+        const res = await fetch('/board/api/niceme/users');
         const json = await res.json();
         rawUsers = json.data || [];
         applyFilter();
