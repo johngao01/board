@@ -12,6 +12,31 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
     <style>
+        :root {
+            --bg-color: #0b0f19;
+            --text-color: #fff;
+            --box-bg: #161b29;
+            --border-color: #2a3b55;
+        }
+
+        body.light-theme {
+            --bg-color: #f4f6f8;
+            --text-color: #333;
+            --box-bg: #ffffff;
+            --border-color: #d1d5db;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+
+        /* 适配 index 等页面的主要模块，将其背景替换为 var(--box-bg) 即可 */
+        .card, .section-header, .search-box, .chart-col-small, .chart-col-large, .table-container, th {
+            background: var(--box-bg);
+            border-color: var(--border-color);
+        }
         /* --- 全局设置 --- */
         body {
             background-color: #0b0f19;
@@ -607,6 +632,7 @@
             <button class="btn-arrow" onclick="adjustDate(1)">❯</button>
         </div>
         <a class="btn-nav" href="/board/user_manage">User表管理</a>
+        <button class="btn-nav" onclick="toggleTheme()">🌓 切换主题</button>
         <button class="btn-today" onclick="goToToday()">今天</button>
     </div>
 </div>
@@ -1289,6 +1315,20 @@
         }).join('');
         st.innerText = `当前显示 ${tableFilteredData.length} 条数据 (总共 ${tableRawData.length} 条)`;
     }
+    function applyTheme() {
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.classList.add('light-theme');
+        } else {
+            document.body.classList.remove('light-theme');
+        }
+    }
+    function toggleTheme() {
+        const isLight = document.body.classList.contains('light-theme');
+        localStorage.setItem('theme', isLight ? 'dark' : 'light');
+        applyTheme();
+        // 提示：如果您在 index 页面使用了 echarts，在此处可能还需要调用 echartsInstance.dispose() 并按新主题重新 init。
+    }
+    document.addEventListener('DOMContentLoaded', applyTheme);
 
     initPage();
     window.onresize = () => {

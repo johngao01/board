@@ -275,52 +275,47 @@ def list_niceme_messages():
 def list_niceme_users():
     conn = pymysql.connect(**DB_NICEBOT)
     try:
-        keyword = request.args.get('keyword', '').strip()
         cursor = conn.cursor(pymysql.cursors.DictCursor)
-        if keyword:
-            sql = """SELECT USERID, USERNAME, valid
-                     FROM user
-                     WHERE CAST(USERID AS CHAR) LIKE %s OR USERNAME LIKE %s
-                     ORDER BY USERID DESC"""
-            kw_like = f"%{keyword}%"
-            cursor.execute(sql, (kw_like, kw_like))
-        else:
-            sql = """SELECT USERID, USERNAME, valid
-                     FROM user
-                     ORDER BY USERID DESC"""
-            cursor.execute(sql)
-
+        # 改为 SELECT * 获取所有字段
+        sql = "SELECT * FROM user ORDER BY USERID DESC"
+        cursor.execute(sql)
         return jsonify({"status": "success", "data": cursor.fetchall()})
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e), "data": []}), 500
     finally:
         conn.close()
 
-
 @app.route('/api/niceme/users/<string:user_id>', methods=['PUT'])
 def update_niceme_user(user_id):
     payload = request.get_json(silent=True) or {}
-    username = payload.get('USERNAME')
-    valid = payload.get('valid')
+    
+    # 防止 USERID 被意外修改
+    if 'USERID' in payload:
+        del payload['USERID']
 
-    if username is None or valid is None:
-        return jsonify({"status": "error", "msg": "USERNAME 和 valid 为必填字段"}), 400
-
-    try:
-        valid_num = int(valid)
-    except (TypeError, ValueError):
-        return jsonify({"status": "error", "msg": "valid 必须是整数"}), 400
+    if not payload:
+        return jsonify({"status": "error", "msg": "未提供需要更新的字段"}), 400
 
     conn = pymysql.connect(**DB_NICEBOT)
     try:
         cursor = conn.cursor()
-        sql = "UPDATE user SET USERNAME = %s, valid = %s WHERE USERID = %s"
-        cursor.execute(sql, (str(username).strip(), valid_num, user_id))
+        
+        # 动态构建 UPDATE 语句
+        set_clauses = []
+        values = []
+        for key, value in payload.items():
+            set_clauses.append(f"{key} = %s")
+            values.append(value)
+            
+        sql = f"UPDATE user SET {', '.join(set_clauses)} WHERE USERID = %s"
+        values.append(user_id)
+        
+        cursor.execute(sql, tuple(values))
         conn.commit()
-
+        
         if cursor.rowcount == 0:
-            return jsonify({"status": "error", "msg": "用户不存在或数据未变化"}), 404
-
+            return jsonify({"status": "error", "msg": "用户不存在或数据未发生变化"}), 404
+            
         return jsonify({"status": "success"})
     except Exception as e:
         conn.rollback()

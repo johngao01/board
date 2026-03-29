@@ -1,17 +1,36 @@
 <!DOCTYPE html>
 <html lang="zh">
-
 <head>
     <meta charset="UTF-8">
     <title>User 表管理</title>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
+        /* CSS 变量实现主题支持 */
+        :root {
+            --bg-color: #0b0f19;
+            --text-color: #fff;
+            --box-bg: #161b29;
+            --border-color: #2a3b55;
+            --btn-text: #00f2ff;
+        }
+
+        body.light-theme {
+            --bg-color: #f4f6f8;
+            --text-color: #333;
+            --box-bg: #ffffff;
+            --border-color: #d1d5db;
+            --btn-text: #007bff;
+        }
+
         body {
-            background-color: #0b0f19;
-            color: #fff;
-            font-family: 'Segoe UI', Roboto, "Microsoft YaHei", sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Roboto, sans-serif;
             margin: 0;
             padding: 20px;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         .header {
@@ -19,258 +38,194 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-            border-bottom: 1px solid #2a3b55;
+            border-bottom: 1px solid var(--border-color);
             padding-bottom: 15px;
-            gap: 12px;
             flex-wrap: wrap;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 28px;
-        }
-
-        h1 span {
-            color: #00f2ff;
+            gap: 15px;
         }
 
         .toolbar {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             align-items: center;
-            flex-wrap: wrap;
         }
 
         .search-box {
-            background: #161b29;
-            border: 1px solid #2a3b55;
-            border-radius: 6px;
             display: flex;
             align-items: center;
+            background: var(--box-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
             padding: 8px 12px;
-            min-width: 260px;
-            gap: 8px;
         }
 
         .search-box input {
             background: transparent;
             border: none;
+            color: var(--text-color);
             outline: none;
-            color: #fff;
-            width: 100%;
             font-size: 14px;
         }
 
         .btn {
-            border: 1px solid #00f2ff;
+            border: 1px solid var(--btn-text);
             background: transparent;
-            color: #00f2ff;
+            color: var(--btn-text);
             padding: 8px 14px;
             border-radius: 6px;
             cursor: pointer;
             text-decoration: none;
             font-weight: bold;
+            transition: 0.2s;
         }
 
         .btn:hover {
-            background: #00f2ff;
-            color: #000;
+            background: var(--btn-text);
+            color: var(--bg-color);
         }
 
-        .table-container {
-            border: 1px solid #2a3b55;
-            border-radius: 8px;
-            overflow: auto;
-            background: #121829;
-        }
-
-        table {
+        /* 给 ag-grid 分配高度 */
+        #myGrid {
+            height: calc(100vh - 120px);
             width: 100%;
-            border-collapse: collapse;
-            min-width: 760px;
-        }
-
-        th,
-        td {
-            padding: 12px 10px;
-            border-bottom: 1px solid #20283b;
-            text-align: left;
-            vertical-align: middle;
-        }
-
-        th {
-            color: #00f2ff;
-            position: sticky;
-            top: 0;
-            background: #161b29;
-            z-index: 1;
-        }
-
-        input[type="text"],
-        input[type="number"] {
-            width: 100%;
-            box-sizing: border-box;
-            border: 1px solid #2a3b55;
-            border-radius: 4px;
-            background: #0f1524;
-            color: #fff;
-            padding: 6px 8px;
-        }
-
-        .btn-save {
-            border: 1px solid #00ff9d;
-            color: #00ff9d;
-            background: transparent;
-            padding: 6px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .btn-save:hover {
-            background: rgba(0, 255, 157, 0.15);
-        }
-
-        .status-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 12px;
-            color: #9fb3d1;
-            font-size: 13px;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .pill {
-            border-radius: 999px;
-            padding: 4px 10px;
-            font-size: 12px;
-        }
-
-        .pill-ok {
-            color: #00ff9d;
-            background: rgba(0, 255, 157, 0.12);
-        }
-
-        .pill-err {
-            color: #ff7b7b;
-            background: rgba(255, 123, 123, 0.12);
         }
     </style>
 </head>
-
 <body>
+
 <div class="header">
-    <h1>👤 User<span>Table</span> 管理</h1>
+    <h1>🚀 User<span>表管理</span></h1>
     <div class="toolbar">
         <div class="search-box">
-            <i class="fas fa-search"></i>
-            <input id="searchInput" type="text" placeholder="按 USERID 或 USERNAME 搜索" oninput="applyFilter()">
+            <i class="fas fa-search" style="margin-right:8px; color:#889eb5;"></i>
+            <input type="text" id="quickFilter" placeholder="输入关键字快速搜索..." oninput="onFilterTextBoxChanged()">
         </div>
-        <button class="btn" onclick="loadUsers()"><i class="fas fa-rotate"></i> 刷新</button>
-        <a class="btn" href="/">← 返回主页</a>
-    </div>
+        <button class="btn" onclick="toggleTheme()">🌓 切换主题</button>
+        <a href="/" class="btn">返回首页</a> </div>
 </div>
 
-<div class="table-container">
-    <table>
-        <thead>
-        <tr>
-            <th style="width:60px;">#</th>
-            <th style="width:180px;">USERID</th>
-            <th>USERNAME</th>
-            <th style="width:150px;">valid</th>
-            <th style="width:110px;">操作</th>
-        </tr>
-        </thead>
-        <tbody id="userTableBody"></tbody>
-    </table>
-</div>
-
-<div class="status-bar">
-    <div id="summary">共 0 条记录</div>
-    <div id="hint">支持修改 USERNAME 与 valid，点击“保存”提交。</div>
-    <div id="resultPill" class="pill" style="display:none;"></div>
-</div>
+<div id="myGrid" class="ag-theme-alpine-dark"></div>
 
 <script>
-    let rawUsers = [];
-    let shownUsers = [];
-
-    function escapeHtml(s) {
-        return String(s ?? '').replace(/[&<>'"]/g, m => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[m]));
-    }
-
-    async function loadUsers() {
-        const pill = document.getElementById('resultPill');
-        pill.style.display = 'none';
-        const res = await fetch('/board/api/niceme/users');
-        const json = await res.json();
-        rawUsers = json.data || [];
-        applyFilter();
-    }
-
-    function applyFilter() {
-        const kw = document.getElementById('searchInput').value.trim().toLowerCase();
-        shownUsers = rawUsers.filter(u => {
-            if (!kw) return true;
-            return String(u.USERID).toLowerCase().includes(kw) || String(u.USERNAME || '').toLowerCase().includes(kw);
-        });
-        renderTable();
-    }
-
-    function renderTable() {
-        const tbody = document.getElementById('userTableBody');
-        if (shownUsers.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#778;">暂无数据</td></tr>';
+    // ========== 1. 主题切换机制 ==========
+    function applyTheme(isLight) {
+        const gridDiv = document.getElementById('myGrid');
+        if (isLight) {
+            document.body.classList.add('light-theme');
+            gridDiv.className = 'ag-theme-alpine'; // ag-grid 浅色皮肤
         } else {
-            tbody.innerHTML = shownUsers.map((u, idx) => `
-                <tr>
-                    <td>${idx + 1}</td>
-                    <td>${escapeHtml(u.USERID)}</td>
-                    <td><input type="text" id="username-${u.USERID}" value="${escapeHtml(u.USERNAME || '')}"></td>
-                    <td><input type="number" id="valid-${u.USERID}" value="${u.valid ?? 0}"></td>
-                    <td><button class="btn-save" onclick="saveUser('${String(u.USERID).replace(/'/g, "\\'")}')">保存</button></td>
-                </tr>
-            `).join('');
-        }
-        document.getElementById('summary').innerText = `当前显示 ${shownUsers.length} 条 / 总计 ${rawUsers.length} 条`;
-    }
-
-    async function saveUser(userId) {
-        const username = document.getElementById(`username-${userId}`).value.trim();
-        const validRaw = document.getElementById(`valid-${userId}`).value;
-        const validNum = Number(validRaw);
-
-        if (!Number.isFinite(validNum)) {
-            showPill('valid 必须是数字', false);
-            return;
-        }
-
-        const res = await fetch(`/api/niceme/users/${encodeURIComponent(userId)}`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({USERNAME: username, valid: validNum})
-        });
-        const json = await res.json();
-        if (json.status === 'success') {
-            showPill(`USERID ${userId} 保存成功`, true);
-            rawUsers = rawUsers.map(u => String(u.USERID) === String(userId) ? {...u, USERNAME: username, valid: validNum} : u);
-            applyFilter();
-        } else {
-            showPill(json.msg || '保存失败', false);
+            document.body.classList.remove('light-theme');
+            gridDiv.className = 'ag-theme-alpine-dark'; // ag-grid 深色皮肤
         }
     }
 
-    function showPill(msg, ok) {
-        const pill = document.getElementById('resultPill');
-        pill.style.display = 'inline-block';
-        pill.className = `pill ${ok ? 'pill-ok' : 'pill-err'}`;
-        pill.innerText = msg;
+    function toggleTheme() {
+        const isLight = !document.body.classList.contains('light-theme');
+        localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        applyTheme(isLight);
     }
 
-    loadUsers();
+    const savedTheme = localStorage.getItem('theme');
+    applyTheme(savedTheme === 'light');
+
+
+    // ========== 2. Ag-Grid 业务逻辑 ==========
+    // 全局声明 gridApi 变量以供后续调用
+    let gridApi;
+
+    const gridOptions = {
+        defaultColDef: {
+            flex: 1,
+            minWidth: 120,
+            editable: true,     // 默认所有字段都可以双击编辑
+            sortable: true,     // 点击表头排序
+            filter: true,       // 允许列漏斗过滤
+            resizable: true     // 允许拖动列宽
+        },
+        columnDefs: [],         // 稍后由接口数据动态生成
+        rowData: [],
+        pagination: true,
+        paginationPageSize: 50,
+        
+        // 单元格编辑完成事件
+        onCellValueChanged: async function(params) {
+            const field = params.colDef.field;
+            const newValue = params.newValue;
+            const oldValue = params.oldValue;
+            const userId = params.data.USERID;
+
+            // 数据没变则忽略
+            if (newValue === oldValue) return;
+
+            const payload = {};
+            payload[field] = newValue;
+
+            try {
+                // 如果实际部署路径为 /board/api/niceme/users ，请调整这里的 URL
+                const res = await fetch(`/board/api/niceme/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                
+                if (data.status !== 'success') {
+                    alert('更新失败: ' + data.msg);
+                    params.node.setDataValue(field, oldValue); // 失败时回滚显示旧值
+                }
+            } catch (error) {
+                console.error('更新请求异常', error);
+                alert('网络异常，更新失败');
+                params.node.setDataValue(field, oldValue); // 失败时回滚显示旧值
+            }
+        }
+    };
+
+    function onFilterTextBoxChanged() {
+        // 使用新版 API 设置快速搜索文本
+        if (gridApi) {
+            gridApi.setGridOption('quickFilterText', document.getElementById('quickFilter').value);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const gridDiv = document.querySelector('#myGrid');
+        
+        // 使用工厂函数创建 grid 并接收 API 实例
+        gridApi = agGrid.createGrid(gridDiv, gridOptions);
+
+        try {
+            // 请求后端数据
+            const res = await fetch('/board/api/niceme/users'); 
+            const result = await res.json();
+            
+            if (result.status === 'success' && result.data.length > 0) {
+                // 动态提取所有的 key 作为列配置
+                const firstRow = result.data[0];
+                const columns = Object.keys(firstRow).map(key => {
+                    return {
+                        field: key,
+                        headerName: key.toUpperCase(),
+                        // 仅 USERID 被设为不可编辑
+                        editable: key !== 'USERID'
+                    };
+                });
+                
+                // 将 USERID 移动到第一列以提高辨识度
+                const userIdIndex = columns.findIndex(c => c.field === 'USERID');
+                if(userIdIndex > 0){
+                    const idCol = columns.splice(userIdIndex, 1)[0];
+                    columns.unshift(idCol);
+                }
+
+                // 使用 setGridOption 更新配置
+                gridApi.setGridOption('columnDefs', columns);
+                gridApi.setGridOption('rowData', result.data);
+            }
+        } catch (error) {
+            console.error('加载数据失败', error);
+        }
+    });
 </script>
 </body>
-
 </html>
