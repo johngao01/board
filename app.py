@@ -1,37 +1,21 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, jsonify, request, send_from_directory
 import pymysql
 import pandas as pd
 import datetime
+from config import DB_NICEBOT, DB_TIKTOK, FRONTEND_DIST_DIR
 from juhe import juhe_bp, init_city_cache, calculate_trend
 from user_report import user_report_bp, detect_platform
 
-
-app = Flask(__name__)
+app = Flask(__name__, static_folder=str(FRONTEND_DIST_DIR), static_url_path="")
 
 app.register_blueprint(juhe_bp)
 app.register_blueprint(user_report_bp)
 
-DB_NICEBOT = {"host": "127.0.0.1", "user": "root",
-              "password": "31305a0fbd", "database": "nicebot", "charset": "utf8mb4"}
-DB_TIKTOK = {"host": "127.0.0.1", "user": "root",
-             "password": "31305a0fbd", "database": "tiktok_bot", "charset": "utf8mb4"}
-
 init_city_cache()
 
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-
-@app.route('/juhe')
-def juhe_page():
-    return render_template('juhe.html')
-
-
-@app.route('/user_manage')
-def user_manage_page():
-    return render_template('user_manage.html')
+def serve_spa_entry():
+    return send_from_directory(app.static_folder, 'index.html')
 
 
 # ==========================================
@@ -362,6 +346,19 @@ def tk_new():
     d = request.args.get('date')
     sql = "select count(distinct chat_id) from users where created_at >= %s AND created_at < %s"
     return jsonify(dict(zip(["val", "trend", "prev"], get_tiktok_metric(sql, d))))
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def frontend_routes(path):
+    if path.startswith('api/'):
+        return jsonify({"status": "error", "msg": "Not found"}), 404
+
+    requested_path = FRONTEND_DIST_DIR / path
+    if path and requested_path.exists() and requested_path.is_file():
+        return send_from_directory(app.static_folder, path)
+
+    return serve_spa_entry()
 
 
 if __name__ == '__main__':

@@ -2,11 +2,9 @@ import pymysql
 import datetime
 import time
 from flask import Blueprint, request, jsonify
+from config import DB_JUHE
 
 juhe_bp = Blueprint('juhe', __name__)
-
-DB_JUHE = {"host": "127.0.0.1", "user": "root",
-           "password": "31305a0fbd", "database": "juhe", "charset": "utf8mb4"}
 
 CITY_CODE_MAP = {}
 

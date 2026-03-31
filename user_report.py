@@ -1,23 +1,15 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, request, jsonify
 import pymysql
 import pandas as pd
 import datetime
 import calendar
 import warnings
+from config import DB_NICEBOT
 
 # 放在 app.py 的顶部，import pandas 之前或之后均可
 warnings.filterwarnings(
     'ignore', message=".*pandas only supports SQLAlchemy connectable.*")
 user_report_bp = Blueprint('user_report', __name__)
-
-# 数据库连接配置 (请确保与你的 app.py 一致)
-DB_CONFIG = {
-    "host": "127.0.0.1",
-    "user": "root",
-    "password": "31305a0fbd",
-    "database": "nicebot",
-    "charset": "utf8mb4"
-}
 
 
 def detect_platform(url):
@@ -77,20 +69,13 @@ def process_messages_df(df):
         })
     return res
 
-
-@user_report_bp.route('/user/<identity>')
-def user_report_page(identity):
-    """渲染用户报告页面"""
-    return render_template('user_report.html', identity=identity)
-
-
 @user_report_bp.route('/api/user/report')
 def api_user_report():
     """初始化报告数据：统计信息 + 账号聚合 + 首页消息 + 当月热力图"""
     identity = request.args.get('identity')
     target_month = datetime.datetime.now().strftime('%Y-%m')
     per_page = 100
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = pymysql.connect(**DB_NICEBOT)
     try:
         # 1. 查询该用户的所有消息
         sql = "SELECT * FROM messages WHERE USERID = %s OR USERNAME = %s"
@@ -185,7 +170,7 @@ def api_user_messages():
     date_filter = request.args.get('date')  # 格式 YYYY-MM-DD
     per_page = 100
     offset = (page - 1) * per_page
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = pymysql.connect(**DB_NICEBOT)
     try:
         # 1. 一次性查出该用户的所有数据 (userid 和 username 建议在数据库里有索引)
         # 注意：这里只根据用户标识过滤，不在数据库层做复杂的日期运算
@@ -245,7 +230,7 @@ def api_user_message_relitu():
     identity = request.args.get('identity')
     target_month = request.args.get('month')  # YYYY-MM
 
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = pymysql.connect(**DB_NICEBOT)
     try:
         sql = "SELECT * FROM messages WHERE (USERID = %s OR USERNAME = %s) ORDER BY DATE_TIME DESC"
         if identity == 'favorite':
