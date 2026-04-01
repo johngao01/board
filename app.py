@@ -269,10 +269,11 @@ def list_niceme_users():
     finally:
         conn.close()
 
+
 @app.route('/api/niceme/users/<string:user_id>', methods=['PUT'])
 def update_niceme_user(user_id):
     payload = request.get_json(silent=True) or {}
-    
+
     # 防止 USERID 被意外修改
     if 'USERID' in payload:
         del payload['USERID']
@@ -283,23 +284,23 @@ def update_niceme_user(user_id):
     conn = pymysql.connect(**DB_NICEBOT)
     try:
         cursor = conn.cursor()
-        
+
         # 动态构建 UPDATE 语句
         set_clauses = []
         values = []
         for key, value in payload.items():
             set_clauses.append(f"{key} = %s")
             values.append(value)
-            
+
         sql = f"UPDATE user SET {', '.join(set_clauses)} WHERE USERID = %s"
         values.append(user_id)
-        
+
         cursor.execute(sql, tuple(values))
         conn.commit()
-        
+
         if cursor.rowcount == 0:
             return jsonify({"status": "error", "msg": "用户不存在或数据未发生变化"}), 404
-            
+
         return jsonify({"status": "success"})
     except Exception as e:
         conn.rollback()
@@ -346,6 +347,11 @@ def tk_new():
     d = request.args.get('date')
     sql = "select count(distinct chat_id) from users where created_at >= %s AND created_at < %s"
     return jsonify(dict(zip(["val", "trend", "prev"], get_tiktok_metric(sql, d))))
+
+
+@app.route('/user/<path:identity>')
+def user_report_entry(identity):
+    return serve_spa_entry()
 
 
 @app.route('/', defaults={'path': ''})

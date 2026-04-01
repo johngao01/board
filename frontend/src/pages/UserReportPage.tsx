@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { apiGet } from '../lib/api'
 import type {
   UserHeatmapResponse,
@@ -14,6 +14,42 @@ function shiftMonth(month: string, delta: number) {
   const year = date.getFullYear()
   const nextMonth = `${date.getMonth() + 1}`.padStart(2, '0')
   return `${year}-${nextMonth}`
+}
+
+function formatMonthLabel(month: string) {
+  if (!month) {
+    return '-'
+  }
+
+  const [year, monthNumber] = month.split('-')
+  return `${year}年${monthNumber}月`
+}
+
+function platformMark(platform: string) {
+  switch (platform) {
+    case '微博':
+      return 'W'
+    case '抖音':
+      return 'D'
+    case 'Instagram':
+      return 'IG'
+    case 'B站':
+      return 'B'
+    default:
+      return '?'
+  }
+}
+
+function typeClassName(fileType: string) {
+  if (fileType === '关注') {
+    return 'table-badge type-follow'
+  }
+
+  if (fileType === '喜欢') {
+    return 'table-badge type-like'
+  }
+
+  return 'table-badge'
 }
 
 export function UserReportPage() {
@@ -30,6 +66,8 @@ export function UserReportPage() {
   const [search, setSearch] = useState('')
   const [platformFilter, setPlatformFilter] = useState('')
   const [fileFilter, setFileFilter] = useState('')
+  const [topSectionCollapsed, setTopSectionCollapsed] = useState(false)
+  const [tableSectionCollapsed, setTableSectionCollapsed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -81,6 +119,7 @@ export function UserReportPage() {
       identity,
       page: String(nextPage),
     })
+
     if (targetDate) {
       query.set('date', targetDate)
     }
@@ -126,27 +165,43 @@ export function UserReportPage() {
       visualMap: {
         min: 0,
         max: Math.max(...fullData.map((item) => item[1]), 5),
-        orient: 'horizontal',
-        left: 'center',
-        bottom: 0,
-        textStyle: { color: 'var(--muted)' },
+        orient: 'vertical',
+        right: 8,
+        top: 'middle',
+        itemHeight: 130,
+        text: ['高', '低'],
+        textStyle: { color: '#8ea3bf' },
         inRange: {
-          color: ['#22304a', '#155e75', '#0f766e', '#4dd4c6'],
+          color: ['#202845', '#18456e', '#0c6ec9', '#00d7ff'],
         },
       },
       calendar: {
-        top: 30,
-        left: 20,
-        right: 20,
-        bottom: 60,
+        top: 44,
+        left: 26,
+        right: 58,
+        bottom: 44,
         range: month,
-        cellSize: ['auto', 42],
-        dayLabel: { firstDay: 1, nameMap: 'cn', color: 'var(--muted)' },
+        splitLine: {
+          show: true,
+          lineStyle: {
+            color: 'rgba(18, 24, 38, 0.95)',
+            width: 2,
+          },
+        },
+        cellSize: ['auto', 56],
+        dayLabel: {
+          firstDay: 1,
+          nameMap: 'cn',
+          color: '#91a6c2',
+          fontSize: 13,
+          margin: 14,
+        },
         monthLabel: { show: false },
         yearLabel: { show: false },
         itemStyle: {
-          borderWidth: 3,
-          borderColor: 'rgba(127,127,127,0.12)',
+          color: '#1c2440',
+          borderColor: '#121826',
+          borderWidth: 2,
         },
       },
       series: [
@@ -158,10 +213,20 @@ export function UserReportPage() {
             show: true,
             formatter: (params: { value: [string, number] }) => {
               const day = Number(params.value[0].split('-')[2])
-              return `${day}\n${params.value[1]}`
+              return `${day}号  ${params.value[1]}个`
             },
-            color: '#fff',
-            fontSize: 10,
+            color: '#f7fbff',
+            fontSize: 11,
+            fontWeight: 700,
+          },
+          emphasis: {
+            label: {
+              color: '#ffffff',
+            },
+            itemStyle: {
+              shadowBlur: 12,
+              shadowColor: 'rgba(0, 234, 255, 0.38)',
+            },
           },
         },
       ],
@@ -172,235 +237,302 @@ export function UserReportPage() {
     return messages.filter((message) => {
       const matchesSearch =
         !search ||
-        Object.values(message).some((value) =>
-          String(value ?? '')
-            .toLowerCase()
-            .includes(search.toLowerCase()),
-        )
+        [
+          message.id,
+          message.username,
+          message.text,
+          message.url,
+          message.caption,
+          message.platform,
+          message.file_type,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(search.toLowerCase())
       const matchesPlatform = !platformFilter || message.platform === platformFilter
       const matchesFile = !fileFilter || message.file_type === fileFilter
       return matchesSearch && matchesPlatform && matchesFile
     })
   }, [fileFilter, messages, platformFilter, search])
 
-  const platformPieOption = report
-    ? {
-        backgroundColor: 'transparent',
-        tooltip: { trigger: 'item' },
-        legend: { bottom: 0, textStyle: { color: 'var(--muted)' } },
-        series: [
-          {
-            type: 'pie',
-            radius: ['45%', '72%'],
-            center: ['50%', '45%'],
-            itemStyle: { borderRadius: 10 },
-            data: Object.entries(report.stats.platforms).map(([name, value]) => ({ name, value })),
-          },
-        ],
-      }
-    : undefined
+  const platformOptions = useMemo(() => {
+    const values = new Set(messages.map((message) => message.platform).filter(Boolean))
+    return Array.from(values)
+  }, [messages])
+
+  const fileOptions = useMemo(() => {
+    const values = new Set(messages.map((message) => message.file_type).filter(Boolean))
+    return Array.from(values)
+  }, [messages])
 
   return (
-    <section className="page">
-      <div className="page-hero">
-        <div className="hero-row">
-          <div>
-            <p className="section-kicker">User Report</p>
-            <h3>用户报告页已经迁到 React</h3>
-            <p className="section-copy">
-              这个页面会展示单个身份下的总体统计、账号维度聚合、活跃日历和历史消息明细。
-            </p>
-          </div>
-
-          <div className="user-report-header-actions">
-            <div className="identity-pill">{identity}</div>
-            <Link className="ghost-button" to="/">
-              返回主页
-            </Link>
-          </div>
-        </div>
-      </div>
-
+    <section className="page user-report-page">
       {error ? <div className="error-banner">接口加载失败：{error}</div> : null}
 
-      <div className="stats-grid">
-        <article className="stat-card">
-          <p className="stat-title">总消息数</p>
-          <strong className="stat-value">{loading ? '...' : report?.stats.total ?? 0}</strong>
-        </article>
-        <article className="stat-card">
-          <p className="stat-title">作品数</p>
-          <strong className="stat-value">{loading ? '...' : report?.stats.works ?? 0}</strong>
-        </article>
-        <article className="stat-card accent-cyan">
-          <p className="stat-title">视频</p>
-          <strong className="stat-value">{loading ? '...' : report?.stats.video ?? 0}</strong>
-        </article>
-        <article className="stat-card accent-gold">
-          <p className="stat-title">图片</p>
-          <strong className="stat-value">{loading ? '...' : report?.stats.image ?? 0}</strong>
-        </article>
-      </div>
-
-      <div className="panel-grid">
-        <section className="panel panel-wide">
-          <div className="panel-head">
-            <div>
-              <p className="section-kicker">Activity Calendar</p>
-              <h4>活跃日历</h4>
-            </div>
-            <div className="month-switcher">
-              <button type="button" className="ghost-button" onClick={() => void handleMonthChange(-1)}>
-                上个月
-              </button>
-              <span className="month-label">{month || '-'}</span>
-              <button type="button" className="ghost-button" onClick={() => void handleMonthChange(1)}>
-                下个月
-              </button>
-            </div>
+      <section className="dashboard-section">
+        <button
+          type="button"
+          className={`section-header theme-nice${topSectionCollapsed ? ' is-collapsed' : ''}`}
+          onClick={() => setTopSectionCollapsed((current) => !current)}
+        >
+          <div className="section-title-group">
+            <span className="drag-handle">⠿</span>
+            <span className="section-title">活跃度日历 & 账号分布统计</span>
+            <span className="identity-pill identity-pill-inline">{identity}</span>
           </div>
-          {heatmapOption ? (
-            <ReactECharts
-              option={heatmapOption}
-              style={{ height: 360 }}
-              onEvents={{
-                click: (params: { componentType?: string; data?: [string, number] }) => {
-                  if (params.componentType === 'series' && params.data) {
-                    const selectedDate = params.data[0]
-                    setDateFilter(selectedDate)
-                    void reloadMessages(selectedDate, 1)
-                  }
-                },
-              }}
-            />
-          ) : (
-            <div className="empty-state">暂无热力图数据</div>
-          )}
-        </section>
+          <span className="toggle-icon">▾</span>
+        </button>
 
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="section-kicker">Platforms</p>
-              <h4>平台分布</h4>
+        {!topSectionCollapsed ? (
+          <div className="section-content user-report-section-content">
+            <div className="stats-grid user-report-stats-grid">
+              <article className="dashboard-card">
+                <p className="dashboard-card-title">总计消息</p>
+                <strong className="dashboard-card-value">{loading ? '...' : report?.stats.total ?? 0}</strong>
+              </article>
+              <article className="dashboard-card">
+                <p className="dashboard-card-title">作品数量</p>
+                <strong className="dashboard-card-value">{loading ? '...' : report?.stats.works ?? 0}</strong>
+              </article>
+              <article className="dashboard-card accent-green">
+                <p className="dashboard-card-title">视频数量</p>
+                <strong className="dashboard-card-value user-report-accent-green">
+                  {loading ? '...' : report?.stats.video ?? 0}
+                </strong>
+              </article>
+              <article className="dashboard-card accent-gold">
+                <p className="dashboard-card-title">图片数量</p>
+                <strong className="dashboard-card-value user-report-accent-gold">
+                  {loading ? '...' : report?.stats.image ?? 0}
+                </strong>
+              </article>
             </div>
-          </div>
-          {platformPieOption ? (
-            <ReactECharts option={platformPieOption} style={{ height: 340 }} />
-          ) : (
-            <div className="empty-state">暂无平台分布数据</div>
-          )}
-        </section>
-      </div>
 
-      <div className="panel-grid">
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="section-kicker">Accounts</p>
-              <h4>关联账号维度统计</h4>
-            </div>
-          </div>
-          <div className="account-list">
-            {report?.info.accounts_stats.map((account) => (
-              <div key={account.userid} className="account-item">
-                <div>
-                  <strong>{account.username}</strong>
-                  <p className="account-meta">
-                    {account.platform} · {account.userid}
-                  </p>
+            <div className="user-report-top-grid">
+              <article className="panel user-report-panel user-report-panel-wide">
+                <div className="user-report-panel-head">
+                  <h4>活跃日历</h4>
+                  <div className="month-switcher user-report-month-switcher">
+                    <button
+                      type="button"
+                      className="header-button"
+                      onClick={() => void handleMonthChange(-1)}
+                    >
+                      ‹
+                    </button>
+                    <span className="user-report-month-label">{formatMonthLabel(month)}</span>
+                    <button
+                      type="button"
+                      className="header-button"
+                      onClick={() => void handleMonthChange(1)}
+                    >
+                      ›
+                    </button>
+                  </div>
                 </div>
-                <div className="account-stats">
-                  <span>消息 {account.msg_count}</span>
-                  <span>作品 {account.work_count}</span>
+                {heatmapOption ? (
+                  <ReactECharts
+                    option={heatmapOption}
+                    style={{ height: 440 }}
+                    onEvents={{
+                      click: (params: { componentType?: string; data?: [string, number] }) => {
+                        if (params.componentType === 'series' && params.data) {
+                          const selectedDate = params.data[0]
+                          setDateFilter(selectedDate)
+                          void reloadMessages(selectedDate, 1)
+                        }
+                      },
+                    }}
+                  />
+                ) : (
+                  <div className="empty-state">暂无热力图数据</div>
+                )}
+              </article>
+
+              <article className="panel user-report-panel">
+                <div className="user-report-panel-head">
+                  <h4>关联账号维度统计</h4>
+                  <span className="panel-note">
+                    共 {report?.info.accounts_stats.length ?? 0} 个账号
+                  </span>
                 </div>
+                <div className="dashboard-table-shell user-report-account-shell">
+                  <div className="dashboard-table-scroll user-report-account-scroll">
+                    <table className="dashboard-table user-report-account-table">
+                      <thead>
+                        <tr>
+                          <th>账号信息</th>
+                          <th>消息数</th>
+                          <th>作品数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report?.info.accounts_stats.map((account) => (
+                          <tr key={account.userid}>
+                            <td>
+                              <div className="user-report-account-main">
+                                <span className="user-report-platform-icon">
+                                  {platformMark(account.platform)}
+                                </span>
+                                <div className="user-report-account-copy">
+                                  <strong>{account.username}</strong>
+                                  <span>{account.userid}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="user-report-metric user-report-metric-cyan">
+                              {account.msg_count}
+                            </td>
+                            <td className="user-report-metric user-report-metric-gold">
+                              {account.work_count}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="dashboard-section">
+        <button
+          type="button"
+          className={`section-header theme-table${tableSectionCollapsed ? ' is-collapsed' : ''}`}
+          onClick={() => setTableSectionCollapsed((current) => !current)}
+        >
+          <div className="section-title-group">
+            <span className="drag-handle">⠿</span>
+            <span className="section-title">详细历史记录</span>
+          </div>
+          <span className="toggle-icon">▾</span>
+        </button>
+
+        {!tableSectionCollapsed ? (
+          <div className="section-content user-report-section-content">
+            <div className="dashboard-toolbar">
+              <label className="dashboard-search">
+                <span className="toolbar-icon">⌕</span>
+                <input
+                  placeholder="搜索 ID / 用户名 / 描述 / 链接"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+              <select value={platformFilter} onChange={(event) => setPlatformFilter(event.target.value)}>
+                <option value="">所有平台</option>
+                {platformOptions.map((platform) => (
+                  <option key={platform} value={platform}>
+                    {platform}
+                  </option>
+                ))}
+              </select>
+              <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value)}>
+                <option value="">所有类型</option>
+                {fileOptions.map((fileType) => (
+                  <option key={fileType} value={fileType}>
+                    {fileType}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="reset-button"
+                onClick={() => {
+                  setSearch('')
+                  setPlatformFilter('')
+                  setFileFilter('')
+                  setDateFilter(null)
+                  void reloadMessages(null, 1)
+                }}
+              >
+                重置
+              </button>
+            </div>
+
+            <div className="dashboard-table-shell">
+              <div className="dashboard-table-scroll">
+                <table className="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th className="col-no">序号</th>
+                      <th>ID</th>
+                      <th>时间</th>
+                      <th>平台</th>
+                      <th>类型</th>
+                      <th>用户名</th>
+                      <th>文件名</th>
+                      <th>描述详情</th>
+                      <th>源链接</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMessages.length ? (
+                      filteredMessages.map((message, index) => (
+                        <tr key={`${message.id}-${index}`}>
+                          <td className="col-no">{index + 1}</td>
+                          <td className="col-id">{message.id}</td>
+                          <td className="col-time">{message.time}</td>
+                          <td>{message.platform}</td>
+                          <td>
+                            <span className={typeClassName(message.file_type)}>{message.file_type}</span>
+                          </td>
+                          <td>
+                            <a
+                              className="user-link"
+                              href={`/user/${encodeURIComponent(message.username)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {message.username}
+                            </a>
+                          </td>
+                          <td className="col-file">{message.caption || '-'}</td>
+                          <td className="col-description user-report-description-cell">
+                            {message.text || '-'}
+                          </td>
+                          <td className="col-link">
+                            {message.url ? (
+                              <a className="table-link" href={message.url} target="_blank" rel="noreferrer">
+                                {message.url}
+                              </a>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={9}>
+                          <div className="table-empty-state">暂无符合筛选条件的数据</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel panel-wide">
-          <div className="panel-head">
-            <div>
-              <p className="section-kicker">Messages</p>
-              <h4>历史明细</h4>
-            </div>
-            <div className="panel-note">
-              {dateFilter ? `已筛选 ${dateFilter}` : '未按日期筛选'}
-            </div>
-          </div>
-
-          <div className="toolbar-mock report-toolbar">
-            <input
-              className="report-input"
-              placeholder="搜索内容 / 用户名 / 链接"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <select value={platformFilter} onChange={(event) => setPlatformFilter(event.target.value)}>
-              <option value="">所有平台</option>
-              <option value="微博">微博</option>
-              <option value="抖音">抖音</option>
-              <option value="Instagram">Instagram</option>
-              <option value="B站">B站</option>
-            </select>
-            <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value)}>
-              <option value="">所有类型</option>
-              <option value="视频">视频</option>
-              <option value="图片">图片</option>
-              <option value="文本">文本</option>
-            </select>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => {
-                setSearch('')
-                setPlatformFilter('')
-                setFileFilter('')
-                setDateFilter(null)
-                void reloadMessages(null, 1)
-              }}
-            >
-              重置
-            </button>
-          </div>
-
-          <div className="message-table">
-            <div className="message-row message-head">
-              <span>时间</span>
-              <span>平台</span>
-              <span>类型</span>
-              <span>用户</span>
-              <span>文件名</span>
-              <span>描述</span>
-            </div>
-            {filteredMessages.map((message) => (
-              <div key={message.id} className="message-row">
-                <span>{message.time}</span>
-                <span>{message.platform}</span>
-                <span>{message.file_type}</span>
-                <span>{message.username}</span>
-                <span className="message-text">{message.caption || '-'}</span>
-                <span className="message-text">{message.text || message.url}</span>
+              <div className="dashboard-table-footer user-report-table-footer">
+                <span>
+                  {dateFilter ? `当前按 ${dateFilter} 筛选，` : ''}
+                  已加载第 {currentPage} / {totalPages} 页，当前显示 {filteredMessages.length} 条
+                </span>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => void reloadMessages(dateFilter, currentPage + 1)}
+                >
+                  {currentPage >= totalPages ? '没有更多了' : '加载更多'}
+                </button>
               </div>
-            ))}
+            </div>
           </div>
-
-          <div className="report-footer">
-            <span className="panel-note">
-              已加载第 {currentPage} / {totalPages} 页，当前显示 {filteredMessages.length} 条
-            </span>
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={currentPage >= totalPages}
-              onClick={() => void reloadMessages(dateFilter, currentPage + 1)}
-            >
-              {currentPage >= totalPages ? '没有更多了' : '加载更多'}
-            </button>
-          </div>
-        </section>
-      </div>
+        ) : null}
+      </section>
     </section>
   )
 }

@@ -54,3 +54,9 @@ export type MessageListResponse = {
     url: string
   }>
 }
+
+export type TikTokDashboardState = {
+  scraped: TiktokMetricResponse | null
+  active: TiktokMetricResponse | null
+  fresh: TiktokMetricResponse | null
+}
