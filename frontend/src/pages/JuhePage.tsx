@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { apiGet, formatDateInput } from '../lib/api'
+import { useChartTheme } from '../lib/chart-theme'
 import type { JuheShanghaiResponse, JuheStatsResponse } from '../lib/juhe'
 
 function trendClass(value: number) {
@@ -25,6 +26,7 @@ function trendText(value: number) {
 }
 
 export function JuhePage() {
+  const chartTheme = useChartTheme()
   const [date, setDate] = useState(() => formatDateInput(new Date()))
   const [stats, setStats] = useState<JuheStatsResponse | null>(null)
   const [shanghai, setShanghai] = useState<JuheShanghaiResponse | null>(null)
@@ -68,6 +70,15 @@ export function JuhePage() {
     }
   }, [date])
 
+  const chartText = chartTheme.text
+  const chartMuted = chartTheme.muted
+  const chartAxis = chartTheme.axis
+  const chartGrid = chartTheme.grid
+  const chartSplit = chartTheme.split
+  const pieBorder = chartTheme.pieBorder
+  const baseBar = chartTheme.baseBar
+  const baseLabel = chartTheme.baseLabel
+
   const cityOption = useMemo<EChartsOption | undefined>(() => {
     if (!stats) {
       return undefined
@@ -80,25 +91,25 @@ export function JuhePage() {
         bottom: 0,
         itemWidth: 18,
         itemHeight: 10,
-        textStyle: { color: '#c2cbdb' },
+        textStyle: { color: chartMuted },
       },
       grid: { left: 28, right: 52, top: 48, bottom: 44, containLabel: true },
       xAxis: {
         type: 'category',
         data: stats.chart_city.map((item) => item.name),
-        axisLabel: { color: '#c2cbdb', interval: 0 },
-        axisLine: { lineStyle: { color: '#384357' } },
+        axisLabel: { color: chartMuted, interval: 0 },
+        axisLine: { lineStyle: { color: chartGrid } },
       },
       yAxis: [
         {
           type: 'value',
-          axisLabel: { color: '#9faabd' },
-          splitLine: { lineStyle: { color: '#2b3445' } },
+          axisLabel: { color: chartAxis },
+          splitLine: { lineStyle: { color: chartSplit } },
         },
         {
           type: 'value',
           max: 100,
-          axisLabel: { color: '#9faabd', formatter: '{value}%' },
+          axisLabel: { color: chartAxis, formatter: '{value}%' },
           splitLine: { show: false },
         },
       ],
@@ -109,8 +120,8 @@ export function JuhePage() {
           barGap: '-100%',
           barWidth: 56,
           data: stats.chart_city.map((item) => item.total),
-          itemStyle: { color: '#3a3a3a' },
-          label: { show: true, position: 'top', color: '#8d93a6', fontWeight: 'bold' },
+          itemStyle: { color: baseBar },
+          label: { show: true, position: 'top', color: baseLabel, fontWeight: 'bold' },
         },
         {
           name: '有效',
@@ -138,7 +149,7 @@ export function JuhePage() {
         },
       ],
     }
-  }, [stats])
+  }, [baseBar, baseLabel, chartAxis, chartGrid, chartMuted, chartSplit, stats])
 
   const sourceOption = useMemo<EChartsOption | undefined>(() => {
     if (!stats) {
@@ -154,22 +165,22 @@ export function JuhePage() {
           type: 'pie',
           radius: ['52%', '72%'],
           center: ['50%', '54%'],
-          itemStyle: { borderRadius: 4, borderColor: '#1a2233', borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: pieBorder, borderWidth: 2 },
           label: {
             show: true,
             formatter: '{b}\n总量 {c}\n占比 {d}%',
-            color: '#dce4f2',
+            color: chartText,
             fontSize: 12,
             lineHeight: 20,
           },
           labelLine: {
-            lineStyle: { color: '#5f6d83' },
+            lineStyle: { color: chartMuted },
           },
           data: stats.chart_source,
         },
       ],
     }
-  }, [stats])
+  }, [chartMuted, chartText, pieBorder, stats])
 
   const shanghaiSourceOption = useMemo<EChartsOption | undefined>(() => {
     if (!shanghai) {
@@ -188,22 +199,22 @@ export function JuhePage() {
           type: 'pie',
           radius: ['50%', '72%'],
           center: ['50%', '54%'],
-          itemStyle: { borderRadius: 4, borderColor: '#1a2233', borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: pieBorder, borderWidth: 2 },
           label: {
             show: true,
             formatter: '{b}\n总量 {c}\n占比 {d}%',
-            color: '#dce4f2',
+            color: chartText,
             fontSize: 12,
             lineHeight: 20,
           },
           labelLine: {
-            lineStyle: { color: '#5f6d83' },
+            lineStyle: { color: chartMuted },
           },
           data: shanghai.sh_breakdown,
         },
       ],
     }
-  }, [shanghai])
+  }, [chartMuted, chartText, pieBorder, shanghai])
 
   const shanghaiTrendOption = useMemo<EChartsOption | undefined>(() => {
     if (!shanghai) {
@@ -217,19 +228,19 @@ export function JuhePage() {
         top: 0,
         itemWidth: 18,
         itemHeight: 10,
-        textStyle: { color: '#c2cbdb' },
+        textStyle: { color: chartMuted },
       },
       grid: { left: 28, right: 24, top: 52, bottom: 28, containLabel: true },
       xAxis: {
         type: 'category',
         data: shanghai.history.dates,
-        axisLabel: { color: '#aab5c8', hideOverlap: true },
-        axisLine: { lineStyle: { color: '#384357' } },
+        axisLabel: { color: chartAxis, hideOverlap: true },
+        axisLine: { lineStyle: { color: chartGrid } },
       },
       yAxis: {
         type: 'value',
-        axisLabel: { color: '#9faabd' },
-        splitLine: { lineStyle: { color: '#2b3445' } },
+        axisLabel: { color: chartAxis },
+        splitLine: { lineStyle: { color: chartSplit } },
       },
       series: [
         {
@@ -254,7 +265,7 @@ export function JuhePage() {
         },
       ],
     }
-  }, [shanghai])
+  }, [chartAxis, chartGrid, chartMuted, chartSplit, shanghai])
 
   const headerDate = date.replaceAll('-', '/')
 

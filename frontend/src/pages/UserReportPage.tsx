@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { useParams } from 'react-router-dom'
 import { apiGet } from '../lib/api'
+import { useChartTheme } from '../lib/chart-theme'
 import type {
   UserHeatmapResponse,
   UserMessagesResponse,
@@ -40,6 +41,86 @@ function platformMark(platform: string) {
   }
 }
 
+function buildPlatformUserUrl(platform: string, userid: string) {
+  const normalizedUserid = String(userid || '').trim()
+
+  if (!normalizedUserid) {
+    return ''
+  }
+
+  switch (platform) {
+    case '微博':
+      return `https://weibo.com/u/${normalizedUserid}`
+    case '抖音':
+      return `https://douyin.com/user/${normalizedUserid}`
+    case 'Instagram':
+      return `https://instagram.com/${normalizedUserid}`
+    case 'B站':
+      return `https://space.bilibili.com/${normalizedUserid}`
+    default:
+      return ''
+  }
+}
+
+function PlatformBadge({ platform }: { platform: string }) {
+  if (platform === '微博') {
+    return (
+      <span className="user-report-platform-icon platform-weibo" aria-label="微博">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M9.2 17.9c-3.1 0-5.7-1.8-5.7-4.1 0-2.2 2.5-4.1 5.7-4.1s5.7 1.8 5.7 4.1c0 2.3-2.6 4.1-5.7 4.1Zm.3-6.5c-1.6-.2-3 .8-3.2 2.1s1 2.7 2.6 2.8c1.6.2 3-.8 3.2-2.1.2-1.3-1-2.6-2.6-2.8Zm8.7-1.3c-.5.2-.8-.2-.7-.7.5-2-1-4.4-3.3-5.2-.6-.2-.5-.6.1-.6 3.1-.3 5.3 2.8 4.7 6-.1.2-.4.4-.8.5Zm-2.2 2.2c-.2.1-.4-.1-.4-.3.1-1.5-.9-3.1-2.3-3.7-.4-.1-.3-.4.1-.5 1.9-.2 3.5 1.5 3.3 3.5 0 .5-.4.9-.7 1Z"
+            fill="currentColor"
+          />
+          <path
+            d="M10.2 13.2c-.7-.1-1.3.3-1.4.9-.1.6.4 1.2 1.1 1.3.7.1 1.3-.3 1.4-.9.1-.6-.4-1.2-1.1-1.3Z"
+            fill="currentColor"
+          />
+        </svg>
+      </span>
+    )
+  }
+
+  if (platform === '抖音') {
+    return (
+      <span className="user-report-platform-icon platform-douyin" aria-label="抖音">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M14.6 3c.5 2.2 1.8 3.9 4 4.7v3.2c-1.5-.1-2.8-.6-4-1.4v5.9a5.5 5.5 0 1 1-5-5.5v3a2.6 2.6 0 1 0 2 2.5V3h3Z"
+            fill="currentColor"
+          />
+        </svg>
+      </span>
+    )
+  }
+
+  if (platform === 'Instagram') {
+    return (
+      <span className="user-report-platform-icon platform-instagram" aria-label="Instagram">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="4" width="16" height="16" rx="4.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          <circle cx="17.2" cy="6.8" r="1.2" fill="currentColor" />
+        </svg>
+      </span>
+    )
+  }
+
+  if (platform === 'B站') {
+    return (
+      <span className="user-report-platform-icon platform-bilibili" aria-label="B站">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M7.6 4.4 10 6.5h4l2.4-2.1c.4-.4 1.1-.3 1.4.1.4.4.3 1.1-.1 1.4L16.9 8H18a2 2 0 0 1 2 2v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a2 2 0 0 1 2-2h1.1L6.3 5.9a1 1 0 1 1 1.3-1.5ZM7 10a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H7Zm2.5 2.2a1 1 0 0 1 1 1V15a1 1 0 1 1-2 0v-1.8a1 1 0 0 1 1-1Zm5 0a1 1 0 0 1 1 1V15a1 1 0 1 1-2 0v-1.8a1 1 0 0 1 1-1Z"
+            fill="currentColor"
+          />
+        </svg>
+      </span>
+    )
+  }
+
+  return <span className="user-report-platform-icon platform-default">{platformMark(platform)}</span>
+}
+
 function typeClassName(fileType: string) {
   if (fileType === '关注') {
     return 'table-badge type-follow'
@@ -53,6 +134,7 @@ function typeClassName(fileType: string) {
 }
 
 export function UserReportPage() {
+  const chartTheme = useChartTheme()
   const params = useParams<{ identity: string }>()
   const identity = params.identity ?? ''
 
@@ -170,9 +252,9 @@ export function UserReportPage() {
         top: 'middle',
         itemHeight: 130,
         text: ['高', '低'],
-        textStyle: { color: '#8ea3bf' },
+        textStyle: { color: chartTheme.muted },
         inRange: {
-          color: ['#202845', '#18456e', '#0c6ec9', '#00d7ff'],
+          color: chartTheme.heatScale,
         },
       },
       calendar: {
@@ -184,7 +266,7 @@ export function UserReportPage() {
         splitLine: {
           show: true,
           lineStyle: {
-            color: 'rgba(18, 24, 38, 0.95)',
+            color: chartTheme.heatBorder,
             width: 2,
           },
         },
@@ -192,15 +274,15 @@ export function UserReportPage() {
         dayLabel: {
           firstDay: 1,
           nameMap: 'cn',
-          color: '#91a6c2',
+          color: chartTheme.heatText,
           fontSize: 13,
           margin: 14,
         },
         monthLabel: { show: false },
         yearLabel: { show: false },
         itemStyle: {
-          color: '#1c2440',
-          borderColor: '#121826',
+          color: chartTheme.heatCell,
+          borderColor: chartTheme.heatBorder,
           borderWidth: 2,
         },
       },
@@ -215,23 +297,23 @@ export function UserReportPage() {
               const day = Number(params.value[0].split('-')[2])
               return `${day}号  ${params.value[1]}个`
             },
-            color: '#f7fbff',
+            color: chartTheme.heatLabel,
             fontSize: 11,
             fontWeight: 700,
           },
           emphasis: {
             label: {
-              color: '#ffffff',
+              color: chartTheme.heatLabel,
             },
             itemStyle: {
               shadowBlur: 12,
-              shadowColor: 'rgba(0, 234, 255, 0.38)',
+              shadowColor: chartTheme.emphasisShadow,
             },
           },
         },
       ],
     }
-  }, [heatmap, month])
+  }, [chartTheme, heatmap, month])
 
   const filteredMessages = useMemo(() => {
     return messages.filter((message) => {
@@ -371,12 +453,25 @@ export function UserReportPage() {
                           <tr key={account.userid}>
                             <td>
                               <div className="user-report-account-main">
-                                <span className="user-report-platform-icon">
-                                  {platformMark(account.platform)}
-                                </span>
+                                <PlatformBadge platform={account.platform} />
                                 <div className="user-report-account-copy">
-                                  <strong>{account.username}</strong>
-                                  <span>{account.userid}</span>
+                                  {buildPlatformUserUrl(account.platform, account.userid) ? (
+                                    <a
+                                      className="user-link user-report-account-link"
+                                      href={
+                                        account.user_url ||
+                                        buildPlatformUserUrl(account.platform, account.userid)
+                                      }
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title={account.username}
+                                    >
+                                      {account.username}
+                                    </a>
+                                  ) : (
+                                    <strong title={account.username}>{account.username}</strong>
+                                  )}
+                                  <span title={account.userid}>{account.userid}</span>
                                 </div>
                               </div>
                             </td>
@@ -406,7 +501,7 @@ export function UserReportPage() {
         >
           <div className="section-title-group">
             <span className="drag-handle">⠿</span>
-            <span className="section-title">详细历史记录</span>
+            <span className="section-title">历史消息记录</span>
           </div>
           <span className="toggle-icon">▾</span>
         </button>

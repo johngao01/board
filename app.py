@@ -273,10 +273,7 @@ def list_niceme_users():
 @app.route('/api/niceme/users/<string:user_id>', methods=['PUT'])
 def update_niceme_user(user_id):
     payload = request.get_json(silent=True) or {}
-
-    # 防止 USERID 被意外修改
-    if 'USERID' in payload:
-        del payload['USERID']
+    original_platform = request.args.get('platform', '')
 
     if not payload:
         return jsonify({"status": "error", "msg": "未提供需要更新的字段"}), 400
@@ -292,8 +289,13 @@ def update_niceme_user(user_id):
             set_clauses.append(f"{key} = %s")
             values.append(value)
 
-        sql = f"UPDATE user SET {', '.join(set_clauses)} WHERE USERID = %s"
+        if original_platform:
+            sql = f"UPDATE user SET {', '.join(set_clauses)} WHERE USERID = %s AND platform = %s"
+        else:
+            sql = f"UPDATE user SET {', '.join(set_clauses)} WHERE USERID = %s"
         values.append(user_id)
+        if original_platform:
+            values.append(original_platform)
 
         cursor.execute(sql, tuple(values))
         conn.commit()

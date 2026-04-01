@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { apiGet, formatDateInput } from '../lib/api'
+import { useChartTheme } from '../lib/chart-theme'
 import type {
   MessageListResponse,
   NicemeResponse,
@@ -15,7 +16,6 @@ type DashboardState = {
   messages: MessageListResponse['data']
 }
 
-type ThemeMode = 'dark' | 'light'
 type TopSectionId = 'nice' | 'tiktok' | 'table'
 type NiceSubSectionId = 'cards' | 'charts'
 type NiceCardId = 'total' | 'users' | 'works' | 'files'
@@ -81,11 +81,11 @@ function extractFileName(message: MessageListResponse['data'][number]) {
     return message.caption
   }
 
-  return '-'
+  return ''
 }
 
 function getDescription(message: MessageListResponse['data'][number]) {
-  return message.caption || message.text || '-'
+  return message.text || '-'
 }
 
 function getTrendClass(value: number) {
@@ -114,24 +114,6 @@ function compareValue(left: string | number, right: string | number, direction: 
       ? left - right
       : String(left).localeCompare(String(right), 'zh-CN')
   return direction === 'asc' ? result : -result
-}
-
-function useThemeMode() {
-  const [theme, setTheme] = useState<ThemeMode>(
-    () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'),
-  )
-
-  useEffect(() => {
-    const root = document.documentElement
-    const observer = new MutationObserver(() => {
-      setTheme(root.dataset.theme === 'light' ? 'light' : 'dark')
-    })
-
-    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
-    return () => observer.disconnect()
-  }, [])
-
-  return theme
 }
 
 function DashboardMetricCard({
@@ -190,7 +172,7 @@ function SortableWrap<T extends string>({
 }
 
 export function DashboardPage() {
-  const theme = useThemeMode()
+  const chartTheme = useChartTheme()
   const [date, setDate] = useState(() => localStorage.getItem('dashboard-date') || formatDateInput(new Date()))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -296,10 +278,10 @@ export function DashboardPage() {
 
   const niceme = data.niceme
   const works = data.works
-  const chartText = theme === 'dark' ? '#f7fbff' : '#173247'
-  const chartMuted = theme === 'dark' ? '#9eb3cd' : '#5d7488'
-  const chartGrid = theme === 'dark' ? '#24324a' : '#d4dfeb'
-  const chartPanel = theme === 'dark' ? '#161d2d' : '#f6fbff'
+  const chartText = chartTheme.text
+  const chartMuted = chartTheme.muted
+  const chartGrid = chartTheme.grid
+  const chartPanel = chartTheme.panel
 
   const messageChartOption = useMemo<EChartsOption | undefined>(() => {
     if (!niceme) {

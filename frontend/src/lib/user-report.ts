@@ -13,6 +13,7 @@ export type UserReportResponse = {
       userid: string
       username: string
       platform: string
+      user_url: string
       msg_count: number
       work_count: number
     }>

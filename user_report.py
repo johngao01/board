@@ -27,6 +27,19 @@ def detect_platform(url):
     return "其他"
 
 
+def build_user_url(platform, userid):
+    userid_str = str(userid or '')
+    if platform == '微博':
+        return f"https://weibo.com/u/{userid_str}"
+    if platform == '抖音':
+        return f"https://douyin.com/user/{userid_str}"
+    if platform == 'Instagram':
+        return f"https://instagram.com/{userid_str}"
+    if platform == 'B站':
+        return f"https://space.bilibili.com/{userid_str}"
+    return ''
+
+
 def process_messages_df(df):
     """处理消息列表格式，对齐首页样式"""
     res = []
@@ -37,21 +50,10 @@ def process_messages_df(df):
             file_type = "视频"
         elif caption.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
             file_type = "图片"
-        user_url = ''
         url = row['URL']
         userid = row['USERID']
-        if "weibo" in url:
-            platform = "微博"
-            user_url = f"https://weibo.com/u/{userid}"
-        elif "douyin" in url:
-            platform = "抖音"
-            user_url = f"https://douyin.com/user/{userid}"
-        elif "instagram" in url:
-            platform = "Instagram"
-            user_url = f"https://instagram.com/{userid}"
-        elif 'bilibili' in url:
-            platform = 'B站'
-            user_url = 'https://space.bilibili.com/{userid}'
+        platform = detect_platform(url)
+        user_url = build_user_url(platform, userid)
         # 转换显示时间 (+8h)
         local_time = pd.to_datetime(
             row['DATE_TIME']) + datetime.timedelta(hours=8)
@@ -121,10 +123,13 @@ def api_user_report():
         # 转换为列表字典，并确保数值是原生 int (解决 int64 报错)
         accounts_stats = []
         for _, row in acc_df.iterrows():
+            platform = str(row['platform'])
+            userid = str(row['USERID'])
             accounts_stats.append({
-                "userid": str(row['USERID']),
+                "userid": userid,
                 "username": str(row['USERNAME']),
-                "platform": str(row['platform']),
+                "platform": platform,
+                "user_url": build_user_url(platform, userid),
                 "msg_count": int(row['MESSAGE_ID']),
                 "work_count": int(row['IDSTR'])
             })

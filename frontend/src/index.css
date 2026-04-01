@@ -3,6 +3,7 @@
   --panel: #161b29;
   --panel-strong: #111723;
   --panel-soft: rgba(18, 24, 38, 0.94);
+  --panel-raised: #1a2233;
   --line: #263854;
   --line-soft: rgba(74, 96, 130, 0.32);
   --text: #f7fbff;
@@ -28,8 +29,9 @@
 :root[data-theme='light'] {
   --bg: #eef4fa;
   --panel: #ffffff;
-  --panel-strong: #f7fbff;
+  --panel-strong: #ffffff;
   --panel-soft: rgba(255, 255, 255, 0.96);
+  --panel-raised: #f8fbff;
   --line: #d5e2ef;
   --line-soft: rgba(120, 149, 179, 0.28);
   --text: #163247;
@@ -376,12 +378,98 @@ a {
   grid-template-columns: 1.05fr 0.95fr;
 }
 
+.user-manage-kpi-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .panel-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .stats-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.user-manage-chart-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 18px;
+}
+
+.user-manage-chart-card,
+.user-manage-chart-card-wide {
+  min-width: 0;
+}
+
+.user-manage-table-head {
+  padding: 0 2px 14px;
+}
+
+.user-manage-raw-table {
+  min-width: max-content;
+}
+
+.user-manage-raw-table td {
+  vertical-align: middle;
+}
+
+.user-manage-inline-link {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.user-manage-toolbar {
+  flex-wrap: nowrap;
+}
+
+.user-manage-search {
+  min-width: 0;
+}
+
+.user-manage-filter {
+  width: 132px;
+  min-width: 132px;
+  max-width: 132px;
+  padding: 12px 36px 12px 14px;
+}
+
+.user-manage-toolbar .reset-button {
+  width: 88px;
+  min-width: 88px;
+  padding: 10px 0;
+}
+
+.user-manage-table-cell {
+  min-width: 160px;
+  cursor: default;
+}
+
+.user-manage-table-cell.is-editing {
+  padding: 8px;
+}
+
+.user-manage-cell-text {
+  display: block;
+  min-height: 22px;
+  white-space: nowrap;
+}
+
+.user-manage-raw-table th {
+  white-space: nowrap;
+}
+
+.user-manage-raw-table td {
+  background: transparent;
+}
+
+.user-manage-cell-editor {
+  width: 100%;
+  min-width: 140px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: inherit;
 }
 
 .stat-card,
@@ -594,7 +682,7 @@ a {
   padding: 0 14px;
   font-size: 18px;
   font-weight: 800;
-  color: #ffffff;
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -607,7 +695,7 @@ a {
 
 .juhe-date-calendar {
   font-size: 16px;
-  color: #c9d2e2;
+  color: var(--muted);
 }
 
 .juhe-stats-grid {
@@ -642,8 +730,8 @@ a {
 }
 
 .juhe-panel {
-  background: #1a2030;
-  border-color: #2d384d;
+  background: var(--panel);
+  border-color: var(--line);
 }
 
 .juhe-panel-wide {
@@ -838,17 +926,18 @@ a {
   margin-bottom: 16px;
   align-items: center;
   flex-wrap: nowrap;
+  background: var(--panel-raised);
 }
 
 .dashboard-search {
-  min-width: 320px;
-  flex: 1 1 320px;
+  min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  background: var(--panel-strong);
+  background: var(--panel);
   border-radius: 8px;
 }
 
@@ -858,8 +947,15 @@ a {
   padding-left: 0;
 }
 
+.dashboard-toolbar select {
+  flex: 0 0 132px;
+  width: 132px;
+  min-width: 132px;
+  max-width: 132px;
+}
+
 .toolbar-icon {
-  color: #677c95;
+  color: var(--muted);
 }
 
 .reset-button {
@@ -867,6 +963,9 @@ a {
   flex: 0 0 auto;
   border-color: rgba(255, 91, 107, 0.52);
   color: var(--danger);
+  width: 88px;
+  min-width: 88px;
+  padding: 10px 0;
 }
 
 .reset-button:hover {
@@ -901,7 +1000,7 @@ a {
 .dashboard-table th {
   position: sticky;
   top: 0;
-  background: var(--panel);
+  background: var(--panel-raised);
   color: #89b4ff;
   font-weight: 700;
   cursor: pointer;
@@ -956,7 +1055,8 @@ a {
   justify-content: center;
   padding: 4px 10px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 1.2;
   font-weight: 700;
 }
 
@@ -1143,14 +1243,31 @@ a {
 .user-report-account-shell {
   background: transparent;
   box-shadow: none;
+  width: 100%;
+  min-width: 0;
 }
 
 .user-report-account-scroll {
   max-height: 440px;
+  overflow: auto;
 }
 
 .user-report-account-table {
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.user-report-account-table th:first-child,
+.user-report-account-table td:first-child {
+  width: auto;
+}
+
+.user-report-account-table th:nth-child(2),
+.user-report-account-table th:nth-child(3),
+.user-report-account-table td:nth-child(2),
+.user-report-account-table td:nth-child(3) {
+  width: 140px;
 }
 
 .user-report-account-table th {
@@ -1162,11 +1279,13 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .user-report-platform-icon {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
   display: inline-grid;
   place-items: center;
   color: #ff8154;
@@ -1174,18 +1293,54 @@ a {
   font-size: 18px;
 }
 
+.user-report-platform-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.user-report-platform-icon.platform-weibo {
+  color: #ff6a3c;
+}
+
+.user-report-platform-icon.platform-douyin {
+  color: #f4f7ff;
+}
+
+.user-report-platform-icon.platform-instagram {
+  color: #ff71a6;
+}
+
+.user-report-platform-icon.platform-bilibili {
+  color: #5bd8ff;
+}
+
 .user-report-account-copy {
   display: grid;
   gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
-.user-report-account-copy strong {
+.user-report-account-copy strong,
+.user-report-account-link {
   font-size: 16px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-report-account-copy span {
   color: var(--muted);
   font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-report-account-link {
+  display: block;
 }
 
 .user-report-metric {
@@ -1224,13 +1379,19 @@ a {
   .user-layout,
   .panel-grid,
   .juhe-panel-grid,
-  .user-report-top-grid {
+  .user-report-top-grid,
+  .user-manage-chart-grid {
     grid-template-columns: 1fr;
     display: grid;
   }
 }
 
 @media (max-width: 900px) {
+  .user-manage-kpi-grid,
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
   .shell {
     grid-template-columns: 1fr;
   }
@@ -1289,6 +1450,19 @@ a {
 
   .dashboard-toolbar {
     flex-wrap: wrap;
+  }
+
+  .user-manage-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-toolbar select,
+  .user-manage-filter,
+  .reset-button,
+  .user-manage-toolbar .reset-button {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 
   .date-controller {
