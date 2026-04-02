@@ -3,6 +3,8 @@ import ReactECharts from 'echarts-for-react'
 import { useParams } from 'react-router-dom'
 import { apiGet } from '../lib/api'
 import { useChartTheme } from '../lib/chart-theme'
+import { PageIntro } from '../components/PageIntro'
+import { loadSessionCached, writeSessionCache } from '../lib/session-cache'
 import type {
   UserHeatmapResponse,
   UserMessagesResponse,
@@ -161,8 +163,8 @@ export function UserReportPage() {
       setError(null)
 
       try {
-        const response = await apiGet<UserReportResponse>(
-          `/api/user/report?identity=${encodeURIComponent(identity)}`,
+        const response = await loadSessionCached(`user-report:${identity}`, () =>
+          apiGet<UserReportResponse>(`/api/user/report?identity=${encodeURIComponent(identity)}`),
         )
 
         if (cancelled) {
@@ -176,6 +178,18 @@ export function UserReportPage() {
         setCurrentPage(1)
         setTotalPages(response.total_pages || 1)
         setDateFilter(null)
+        writeSessionCache(`user-report:messages:${identity}:all:1`, {
+          status: 'success',
+          messages: response.messages,
+          total_pages: response.total_pages || 1,
+          total_count: response.messages.length,
+          current_date: null,
+        } satisfies UserMessagesResponse)
+        writeSessionCache(`user-report:heatmap:${identity}:${response.info.current_month}`, {
+          status: 'success',
+          month: response.info.current_month,
+          data: response.heatmap,
+        } satisfies UserHeatmapResponse)
       } catch (requestError) {
         if (!cancelled) {
           setError(requestError instanceof Error ? requestError.message : '用户报告加载失败')
@@ -206,7 +220,9 @@ export function UserReportPage() {
       query.set('date', targetDate)
     }
 
-    const response = await apiGet<UserMessagesResponse>(`/api/user/messages?${query.toString()}`)
+    const response = await loadSessionCached(`user-report:messages:${identity}:${targetDate ?? 'all'}:${nextPage}`, () =>
+      apiGet<UserMessagesResponse>(`/api/user/messages?${query.toString()}`),
+    )
     setCurrentPage(nextPage)
     setTotalPages(response.total_pages || 1)
 
@@ -219,8 +235,8 @@ export function UserReportPage() {
 
   async function handleMonthChange(delta: number) {
     const nextMonth = shiftMonth(month, delta)
-    const response = await apiGet<UserHeatmapResponse>(
-      `/api/user/heatmap?identity=${encodeURIComponent(identity)}&month=${nextMonth}`,
+    const response = await loadSessionCached(`user-report:heatmap:${identity}:${nextMonth}`, () =>
+      apiGet<UserHeatmapResponse>(`/api/user/heatmap?identity=${encodeURIComponent(identity)}&month=${nextMonth}`),
     )
     setMonth(nextMonth)
     setHeatmap(response.data)
@@ -349,6 +365,16 @@ export function UserReportPage() {
 
   return (
     <section className="page user-report-page">
+      <PageIntro
+        eyebrow="User Report"
+        title={<h3>用户报告</h3>}
+        description={
+          <>
+            查看 <span className="identity-pill">{identity}</span> 的活跃度日历、账号分布和历史消息记录。
+          </>
+        }
+      />
+
       {error ? <div className="error-banner">接口加载失败：{error}</div> : null}
 
       <section className="dashboard-section">

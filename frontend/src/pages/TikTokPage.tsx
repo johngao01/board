@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiGet, formatDateInput } from '../lib/api'
+import { mainPageInfo } from '../config/page-info'
+import { PageIntro } from '../components/PageIntro'
+import { loadSessionCached } from '../lib/session-cache'
 import type { TikTokDashboardState, TiktokMetricResponse } from '../lib/dashboard'
 
 const emptyState: TikTokDashboardState = {
@@ -52,6 +55,7 @@ function MetricCard({
 }
 
 export function TikTokPage() {
+  const pageInfo = mainPageInfo.tiktok
   const [date, setDate] = useState(() => formatDateInput(new Date()))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -65,17 +69,21 @@ export function TikTokPage() {
       setError(null)
 
       try {
-        const [scraped, active, fresh] = await Promise.all([
-          apiGet<TiktokMetricResponse>(`/api/tiktok/scraped?date=${date}`),
-          apiGet<TiktokMetricResponse>(`/api/tiktok/active?date=${date}`),
-          apiGet<TiktokMetricResponse>(`/api/tiktok/new?date=${date}`),
-        ])
+        const nextData = await loadSessionCached(`tiktok:${date}`, async () => {
+          const [scraped, active, fresh] = await Promise.all([
+            apiGet<TiktokMetricResponse>(`/api/tiktok/scraped?date=${date}`),
+            apiGet<TiktokMetricResponse>(`/api/tiktok/active?date=${date}`),
+            apiGet<TiktokMetricResponse>(`/api/tiktok/new?date=${date}`),
+          ])
+
+          return { scraped, active, fresh }
+        })
 
         if (cancelled) {
           return
         }
 
-        setData({ scraped, active, fresh })
+        setData(nextData)
       } catch (requestError) {
         if (!cancelled) {
           setError(requestError instanceof Error ? requestError.message : '加载失败')
@@ -103,22 +111,39 @@ export function TikTokPage() {
     return Number((scraped / active).toFixed(1))
   }, [data.active?.val, data.scraped?.val])
 
+  function adjustDate(days: number) {
+    const target = new Date(`${date}T00:00:00`)
+    target.setDate(target.getDate() + days)
+    setDate(formatDateInput(target))
+  }
+
   return (
     <section className="page">
-      <div className="page-hero">
-        <div className="hero-row">
-          <div>
-            <p className="section-kicker">TikTok Dashboard</p>
-            <h3>TikTok Bot 统计信息</h3>
-            <p className="section-copy">TikTok 指标已从首页拆分，单独放在这个页面展示。</p>
-          </div>
-
-          <label className="date-field">
-            <span>统计日期</span>
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-          </label>
-        </div>
-      </div>
+      <PageIntro
+        eyebrow={pageInfo.eyebrow}
+        title={<h3>{pageInfo.title}</h3>}
+        description={pageInfo.description}
+        actions={
+          <>
+            <div className="date-controller">
+              <button type="button" className="date-arrow" onClick={() => adjustDate(-1)}>
+                ‹
+              </button>
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              <button type="button" className="date-arrow" onClick={() => adjustDate(1)}>
+                ›
+              </button>
+            </div>
+            <button
+              type="button"
+              className="header-button header-button-solid"
+              onClick={() => setDate(formatDateInput(new Date()))}
+            >
+              今天
+            </button>
+          </>
+        }
+      />
 
       {error ? <div className="error-banner">接口加载失败：{error}</div> : null}
 

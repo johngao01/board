@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { apiGet, formatDateInput } from '../lib/api'
+import { mainPageInfo } from '../config/page-info'
 import { useChartTheme } from '../lib/chart-theme'
+import { PageIntro } from '../components/PageIntro'
+import { loadSessionCached } from '../lib/session-cache'
 import type { JuheShanghaiResponse, JuheStatsResponse } from '../lib/juhe'
 
 function trendClass(value: number) {
@@ -26,6 +29,7 @@ function trendText(value: number) {
 }
 
 export function JuhePage() {
+  const pageInfo = mainPageInfo.juhe
   const chartTheme = useChartTheme()
   const [date, setDate] = useState(() => formatDateInput(new Date()))
   const [stats, setStats] = useState<JuheStatsResponse | null>(null)
@@ -41,17 +45,24 @@ export function JuhePage() {
       setError(null)
 
       try {
-        const [statsResponse, shanghaiResponse] = await Promise.all([
-          apiGet<JuheStatsResponse>(`/api/juhe/stats?date=${date}`),
-          apiGet<JuheShanghaiResponse>(`/api/juhe/shanghai?date=${date}`),
-        ])
+        const nextData = await loadSessionCached(`juhe:${date}`, async () => {
+          const [statsResponse, shanghaiResponse] = await Promise.all([
+            apiGet<JuheStatsResponse>(`/api/juhe/stats?date=${date}`),
+            apiGet<JuheShanghaiResponse>(`/api/juhe/shanghai?date=${date}`),
+          ])
+
+          return {
+            stats: statsResponse,
+            shanghai: shanghaiResponse,
+          }
+        })
 
         if (cancelled) {
           return
         }
 
-        setStats(statsResponse)
-        setShanghai(shanghaiResponse)
+        setStats(nextData.stats)
+        setShanghai(nextData.shanghai)
       } catch (requestError) {
         if (!cancelled) {
           setError(requestError instanceof Error ? requestError.message : '聚合数据加载失败')
@@ -267,52 +278,44 @@ export function JuhePage() {
     }
   }, [chartAxis, chartGrid, chartMuted, chartSplit, shanghai])
 
-  const headerDate = date.replaceAll('-', '/')
+  function adjustDate(days: number) {
+    const target = new Date(`${date}T00:00:00`)
+    target.setDate(target.getDate() + days)
+    setDate(formatDateInput(target))
+  }
 
   return (
     <section className="page juhe-page">
-      <div className="juhe-header">
-        <div className="juhe-title-block">
+      <PageIntro
+        eyebrow={pageInfo.eyebrow}
+        title={
           <h3>
             <span className="juhe-title-icon">✴</span>
-            Juhe 聚合数据
+            {pageInfo.title}
           </h3>
-        </div>
-
-        <div className="juhe-header-actions">
-          <div className="juhe-date-controller">
-            <button
-              type="button"
-              className="juhe-date-arrow"
-              onClick={() => {
-                const target = new Date(`${date}T00:00:00`)
-                target.setDate(target.getDate() - 1)
-                setDate(formatDateInput(target))
-              }}
-            >
-              ‹
-            </button>
-            <label className="juhe-date-label">
+        }
+        description={pageInfo.description}
+        actions={
+          <>
+            <div className="date-controller">
+              <button type="button" className="date-arrow" onClick={() => adjustDate(-1)}>
+                ‹
+              </button>
               <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-              <span>{headerDate}</span>
-              <span className="juhe-date-calendar" aria-hidden="true">
-                📅
-              </span>
-            </label>
+              <button type="button" className="date-arrow" onClick={() => adjustDate(1)}>
+                ›
+              </button>
+            </div>
             <button
               type="button"
-              className="juhe-date-arrow"
-              onClick={() => {
-                const target = new Date(`${date}T00:00:00`)
-                target.setDate(target.getDate() + 1)
-                setDate(formatDateInput(target))
-              }}
+              className="header-button header-button-solid"
+              onClick={() => setDate(formatDateInput(new Date()))}
             >
-              ›
+              今天
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error ? <div className="error-banner">接口加载失败：{error}</div> : null}
 

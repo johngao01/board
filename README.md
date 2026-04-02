@@ -2,10 +2,10 @@
 
 `Board` 是一个基于 Flask + React 的数据看板项目，当前主要包含以下业务页面：
 
-- 首页数据中心
+- 首页今日概览
 - Juhe 聚合数据页
 - TikTokBot 独立统计页
-- User 管理页
+- 关注用户管理页
 - User Report 用户报告页
 
 后端负责提供 API 和托管前端构建产物，前端负责页面路由、交互、图表和表格展示。
@@ -27,25 +27,32 @@ board/
 ├─ frontend/               React 前端
 │  ├─ src/App.tsx
 │  ├─ src/components/AppShell.tsx
+│  ├─ src/components/PageIntro.tsx
+│  ├─ src/config/page-info.ts
+│  ├─ src/lib/session-cache.ts
 │  ├─ src/pages/DashboardPage.tsx
 │  ├─ src/pages/JuhePage.tsx
 │  ├─ src/pages/TikTokPage.tsx
+│  ├─ src/pages/UserManagePage.tsx
 │  └─ src/pages/UserReportPage.tsx
-└─ README.md
+├─ README.md
+└─ GIT_CHANGES_OVERVIEW.md
 ```
 
 ## 功能概览
 
 ### 首页
 
-- 左侧边栏默认收起，悬停展开
+- 顶部 `page-info` 使用英文眉题 + 中文标题 + 页面说明
 - 顶部日期切换与今日快捷按钮
-- NiceBot 统计卡片、消息分布、作品分布、趋势图
-- 消息明细表筛选、排序、复制、链接跳转
+- 三大区块：核心指标、数据图表、消息明细
+- 图表点击可筛选，消息/作品图点击空白区域可清除筛选
+- 消息明细表筛选、排序、链接跳转
 - 区块折叠与拖拽排序
 
 ### Juhe 页
 
+- 顶部 `page-info` 与首页统一
 - 聚合 KPI 卡片
 - 全平台来源分布
 - 热门城市数据质量
@@ -56,6 +63,14 @@ board/
 
 - 从首页拆分出的独立统计页
 - 保留 TikTok 维度的数据展示
+- 顶部 `page-info` 与首页统一
+
+### 关注用户管理页
+
+- 顶部 `page-info` 与首页统一
+- 三大区块：核心指标、图表报告、关注用户详细
+- 图表支持点击筛选
+- 表格支持双击单元格编辑并保存
 
 ### User Report 页
 
@@ -224,15 +239,47 @@ http://127.0.0.1:12345/user/周妍希
 - `/api/user/messages`
 - `/api/user/heatmap`
 
+## 页面文案配置
+
+4 个主页面顶部 `page-info` 的英文眉题、中文标题和说明文案已集中放在：
+
+```text
+frontend/src/config/page-info.ts
+```
+
+修改这一个文件即可统一调整：
+
+- 首页
+- TikTok 页
+- 关注用户管理页
+- Juhe 页
+
+## 缓存行为
+
+前端已加入“本次网页会话缓存”：
+
+- 刷新网页后重新请求数据
+- 切换日期或月份时重新请求对应数据
+- 仅在页面之间切换时，直接复用已获取数据，不重复请求
+
+相关实现位于：
+
+```text
+frontend/src/lib/session-cache.ts
+```
+
 ## 最近这轮前端调整
 
-- 左侧导航改为默认隐藏、悬停展开
-- 顶部多余按钮移除，主题切换只保留在左侧边栏
-- 首页恢复旧版布局、折叠与拖拽排序能力
-- 深色模式图表文字和对比度修正
+- 左侧导航支持悬停展开、固定展开，且展开时不会遮挡右侧内容
+- 顶部 `page-info` 抽为统一组件，4 个主页面统一样式
+- 顶部文案抽到配置文件，支持集中自定义
+- 首页标题改为“今日概览”，布局拆分为核心指标、数据图表、消息明细
+- 首页图表支持点击筛选，空白点击清除筛选
 - TikTokBot 统计从首页拆分为独立页面
-- Juhe 页恢复旧版顶部样式和上海详细数据监控
+- Juhe 页顶部样式与主页统一，保留聚合监控内容
+- 关注用户管理页重组为核心指标、图表报告、关注用户详细
 - User Report 页改回与首页同风格的区块布局
+- 页面切换默认复用已获取数据，减少重复请求
 - User 页面直达路由补齐，支持中文用户名路径
 
 ## 验证

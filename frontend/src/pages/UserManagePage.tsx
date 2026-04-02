@@ -3,7 +3,10 @@ import ReactECharts from 'echarts-for-react'
 import type { ECharts, EChartsOption } from 'echarts'
 import { Link } from 'react-router-dom'
 import { apiGet } from '../lib/api'
+import { mainPageInfo } from '../config/page-info'
 import { useChartTheme } from '../lib/chart-theme'
+import { PageIntro } from '../components/PageIntro'
+import { loadSessionCached, writeSessionCache } from '../lib/session-cache'
 import type { UserListResponse, UserRecord, UserUpdateResponse } from '../lib/users'
 
 type ActiveCell = {
@@ -19,7 +22,7 @@ type ChartDatum = {
   filterValue: string
 }
 
-type UserSectionId = 'charts' | 'table'
+type UserSectionId = 'cards' | 'charts' | 'table'
 
 type UserPanelStats = {
   total: number
@@ -253,7 +256,17 @@ function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<
   }
 }
 
+function buildDraftMap(rows: UserRecord[]) {
+  return Object.fromEntries(
+    rows.map((row) => [
+      buildRowKey(row),
+      Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value == null ? '' : String(value)])),
+    ]),
+  )
+}
+
 export function UserManagePage() {
+  const pageInfo = mainPageInfo.users
   const chartTheme = useChartTheme()
   const [rows, setRows] = useState<UserRecord[]>([])
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
@@ -270,12 +283,13 @@ export function UserManagePage() {
   const [collapsed, setCollapsed] = useState<Record<UserSectionId, boolean>>(() => {
     try {
       return {
+        cards: false,
         charts: false,
         table: false,
         ...(JSON.parse(localStorage.getItem('user-manage-collapsed') || '{}') as Partial<Record<UserSectionId, boolean>>),
       }
     } catch {
-      return { charts: false, table: false }
+      return { cards: false, charts: false, table: false }
     }
   })
   const [platformChart, setPlatformChart] = useState<ECharts | null>(null)
@@ -296,23 +310,17 @@ export function UserManagePage() {
       setFeedback(null)
 
       try {
-        const response = await apiGet<UserListResponse>('/api/niceme/users')
+        const data = await loadSessionCached('user-manage:rows', async () => {
+          const response = await apiGet<UserListResponse>('/api/niceme/users')
+          return response.data ?? []
+        })
+
         if (cancelled) {
           return
         }
 
-        const data = response.data ?? []
         setRows(data)
-        setDrafts(
-          Object.fromEntries(
-            data.map((row) => [
-              buildRowKey(row),
-              Object.fromEntries(
-                Object.entries(row).map(([key, value]) => [key, value == null ? '' : String(value)]),
-              ),
-            ]),
-          ),
-        )
+        setDrafts(buildDraftMap(data))
       } catch (error) {
         if (!cancelled) {
           setFeedback(error instanceof Error ? error.message : '用户列表加载失败')
@@ -330,6 +338,12 @@ export function UserManagePage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!loading && !feedback) {
+      writeSessionCache('user-manage:rows', rows)
+    }
+  }, [feedback, loading, rows])
 
   const columns = useMemo(() => {
     const ordered = new Set<string>()
@@ -682,35 +696,50 @@ export function UserManagePage() {
 
   return (
     <section className="page">
-      <div className="page-hero">
-        <div className="hero-row">
-          <div>
-            <h3>用户数据面板</h3>
-            <p className="section-copy">图表支持直接点击筛选，下方原始表格支持双击单元格编辑，回车保存，Esc 取消。</p>
-          </div>
-        </div>
-      </div>
+      <PageIntro
+        eyebrow={pageInfo.eyebrow}
+        title={<h3>{pageInfo.title}</h3>}
+        description={pageInfo.description}
+      />
 
       {feedback ? <div className="info-banner">{feedback}</div> : null}
 
-      <div className="stats-grid user-manage-kpi-grid">
-        <article className="dashboard-card accent-cyan">
-          <p className="dashboard-card-title">筛选后用户数</p>
-          <strong className="dashboard-card-value">{loading ? '...' : panelStats.total}</strong>
-        </article>
-        <article className="dashboard-card accent-green">
-          <p className="dashboard-card-title">有效关注数</p>
-          <strong className="dashboard-card-value">{loading ? '...' : panelStats.active}</strong>
-        </article>
-        <article className="dashboard-card accent-gold">
-          <p className="dashboard-card-title">特别关注数</p>
-          <strong className="dashboard-card-value">{loading ? '...' : panelStats.special}</strong>
-        </article>
-        <article className="dashboard-card">
-          <p className="dashboard-card-title">待巡检账号</p>
-          <strong className="dashboard-card-value">{loading ? '...' : panelStats.stale}</strong>
-        </article>
-      </div>
+      <section className="dashboard-section">
+        <button
+          type="button"
+          className={`section-header theme-nice ${collapsed.cards ? 'is-collapsed' : ''}`}
+          onClick={() => toggleSection('cards')}
+        >
+          <span className="section-title-group">
+            <span className="drag-handle">⋮⋮</span>
+            <span className="section-title">核心指标</span>
+          </span>
+          <span className="toggle-icon">⌄</span>
+        </button>
+
+        {!collapsed.cards ? (
+          <div className="section-content">
+            <div className="stats-grid user-manage-kpi-grid">
+              <article className="dashboard-card accent-cyan">
+                <p className="dashboard-card-title">筛选后用户数</p>
+                <strong className="dashboard-card-value">{loading ? '...' : panelStats.total}</strong>
+              </article>
+              <article className="dashboard-card accent-green">
+                <p className="dashboard-card-title">有效关注数</p>
+                <strong className="dashboard-card-value">{loading ? '...' : panelStats.active}</strong>
+              </article>
+              <article className="dashboard-card accent-gold">
+                <p className="dashboard-card-title">特别关注数</p>
+                <strong className="dashboard-card-value">{loading ? '...' : panelStats.special}</strong>
+              </article>
+              <article className="dashboard-card">
+                <p className="dashboard-card-title">待巡检账号</p>
+                <strong className="dashboard-card-value">{loading ? '...' : panelStats.stale}</strong>
+              </article>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <section className="dashboard-section">
         <button
@@ -720,7 +749,7 @@ export function UserManagePage() {
         >
           <span className="section-title-group">
             <span className="drag-handle">⋮⋮</span>
-            <span className="section-title">用户图表报告</span>
+            <span className="section-title">图表报告</span>
           </span>
           <span className="toggle-icon">⌄</span>
         </button>
@@ -788,18 +817,13 @@ export function UserManagePage() {
         >
           <span className="section-title-group">
             <span className="drag-handle">⋮⋮</span>
-            <span className="section-title">用户原始表</span>
+            <span className="section-title">关注用户详细</span>
           </span>
           <span className="toggle-icon">⌄</span>
         </button>
 
         {!collapsed.table ? (
           <div className="section-content">
-            <div className="panel-head user-manage-table-head">
-              <div className="panel-note">双击单元格编辑，回车保存，Esc 取消；图表空白区域点击可清除对应筛选。</div>
-              <div className="panel-note">{loading ? '加载中...' : `${filteredRows.length} 条`}</div>
-            </div>
-
             <div className="dashboard-toolbar user-manage-toolbar">
               <label className="dashboard-search user-manage-search">
                 <span className="toolbar-icon">⌕</span>

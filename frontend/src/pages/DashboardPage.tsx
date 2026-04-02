@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import type { EChartsOption } from 'echarts'
+import type { ECharts, EChartsOption } from 'echarts'
 import { apiGet, formatDateInput } from '../lib/api'
+import { mainPageInfo } from '../config/page-info'
 import { useChartTheme } from '../lib/chart-theme'
+import { PageIntro } from '../components/PageIntro'
+import { loadSessionCached } from '../lib/session-cache'
 import type {
   MessageListResponse,
   NicemeResponse,
@@ -16,8 +19,7 @@ type DashboardState = {
   messages: MessageListResponse['data']
 }
 
-type TopSectionId = 'nice' | 'tiktok' | 'table'
-type NiceSubSectionId = 'cards' | 'charts'
+type TopSectionId = 'cards' | 'charts' | 'table'
 type NiceCardId = 'total' | 'users' | 'works' | 'files'
 type NiceChartId = 'messages' | 'works' | 'history'
 type SortColumn = 'id' | 'time' | 'platform' | 'type' | 'username' | 'fileName' | 'description'
@@ -32,7 +34,7 @@ type Filters = {
 
 type CollapsedState = Record<string, boolean>
 type DragState<T extends string> = {
-  type: 'top' | 'nice-sub' | 'nice-card' | 'nice-chart'
+  type: 'top' | 'nice-card' | 'nice-chart'
   id: T
 }
 
@@ -42,8 +44,7 @@ const emptyState: DashboardState = {
   messages: [],
 }
 
-const topSectionDefaults: TopSectionId[] = ['nice', 'table']
-const niceSubDefaults: NiceSubSectionId[] = ['cards', 'charts']
+const topSectionDefaults: TopSectionId[] = ['cards', 'charts', 'table']
 const niceCardDefaults: NiceCardId[] = ['total', 'users', 'works', 'files']
 const niceChartDefaults: NiceChartId[] = ['messages', 'works', 'history']
 const defaultFilters: Filters = { search: '', platform: '', type: '', fileType: '' }
@@ -172,6 +173,7 @@ function SortableWrap<T extends string>({
 }
 
 export function DashboardPage() {
+  const pageInfo = mainPageInfo.dashboard
   const chartTheme = useChartTheme()
   const [date, setDate] = useState(() => localStorage.getItem('dashboard-date') || formatDateInput(new Date()))
   const [loading, setLoading] = useState(true)
@@ -179,9 +181,6 @@ export function DashboardPage() {
   const [data, setData] = useState<DashboardState>(emptyState)
   const [topSections, setTopSections] = useState<TopSectionId[]>(() =>
     readStoredOrder('dashboard-top-sections', topSectionDefaults),
-  )
-  const [niceSubSections, setNiceSubSections] = useState<NiceSubSectionId[]>(() =>
-    readStoredOrder('dashboard-nice-subsections', niceSubDefaults),
   )
   const [niceCards, setNiceCards] = useState<NiceCardId[]>(() =>
     readStoredOrder('dashboard-nice-cards', niceCardDefaults),
@@ -206,6 +205,8 @@ export function DashboardPage() {
   const [sortColumn, setSortColumn] = useState<SortColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [dragState, setDragState] = useState<DragState<string> | null>(null)
+  const [messageChart, setMessageChart] = useState<ECharts | null>(null)
+  const [worksChart, setWorksChart] = useState<ECharts | null>(null)
 
   useEffect(() => {
     localStorage.setItem('dashboard-date', date)
@@ -214,10 +215,6 @@ export function DashboardPage() {
   useEffect(() => {
     localStorage.setItem('dashboard-top-sections', JSON.stringify(topSections))
   }, [topSections])
-
-  useEffect(() => {
-    localStorage.setItem('dashboard-nice-subsections', JSON.stringify(niceSubSections))
-  }, [niceSubSections])
 
   useEffect(() => {
     localStorage.setItem('dashboard-nice-cards', JSON.stringify(niceCards))
@@ -243,21 +240,25 @@ export function DashboardPage() {
       setError(null)
 
       try {
-        const [nicemeRes, worksRes, messagesRes] = await Promise.all([
-          apiGet<NicemeResponse>(`/api/niceme?date=${date}`),
-          apiGet<WorksDistResponse>(`/api/niceme/works_dist?date=${date}`),
-          apiGet<MessageListResponse>(`/api/list/niceme_messages?date=${date}`),
-        ])
+        const nextData = await loadSessionCached(`dashboard:${date}`, async () => {
+          const [nicemeRes, worksRes, messagesRes] = await Promise.all([
+            apiGet<NicemeResponse>(`/api/niceme?date=${date}`),
+            apiGet<WorksDistResponse>(`/api/niceme/works_dist?date=${date}`),
+            apiGet<MessageListResponse>(`/api/list/niceme_messages?date=${date}`),
+          ])
+
+          return {
+            niceme: nicemeRes.status === 'success' ? nicemeRes.data : null,
+            works: worksRes,
+            messages: messagesRes.data ?? [],
+          }
+        })
 
         if (cancelled) {
           return
         }
 
-        setData({
-          niceme: nicemeRes.status === 'success' ? nicemeRes.data : null,
-          works: worksRes,
-          messages: messagesRes.data ?? [],
-        })
+        setData(nextData)
       } catch (requestError) {
         if (!cancelled) {
           setError(requestError instanceof Error ? requestError.message : '加载失败')
@@ -588,6 +589,24 @@ export function DashboardPage() {
     updateFilters(patch)
   }
 
+  function bindBlankClickReset(chart: ECharts | null, onBlankClick: () => void) {
+    if (!chart) {
+      return undefined
+    }
+
+    const zr = chart.getZr()
+    const handler = (params: { target?: unknown }) => {
+      if (!params.target) {
+        onBlankClick()
+      }
+    }
+
+    zr.on('click', handler)
+    return () => {
+      zr.off('click', handler)
+    }
+  }
+
   function adjustDate(days: number) {
     const target = new Date(`${date}T00:00:00`)
     target.setDate(target.getDate() + days)
@@ -605,17 +624,6 @@ export function DashboardPage() {
 
     setTopSections((current) =>
       reorderItems(current, current.indexOf(dragState.id as TopSectionId), current.indexOf(targetId)),
-    )
-    setDragState(null)
-  }
-
-  function dropNiceSubSection(targetId: NiceSubSectionId) {
-    if (!dragState || dragState.type !== 'nice-sub') {
-      return
-    }
-
-    setNiceSubSections((current) =>
-      reorderItems(current, current.indexOf(dragState.id as NiceSubSectionId), current.indexOf(targetId)),
     )
     setDragState(null)
   }
@@ -641,6 +649,9 @@ export function DashboardPage() {
     )
     setDragState(null)
   }
+
+  useEffect(() => bindBlankClickReset(messageChart, () => updateFilters({ platform: '' })), [messageChart])
+  useEffect(() => bindBlankClickReset(worksChart, () => updateFilters({ platform: '', type: '' })), [worksChart])
 
   const niceCardMap: Record<NiceCardId, ReactNode> = {
     total: (
@@ -707,6 +718,7 @@ export function DashboardPage() {
           <ReactECharts
             option={messageChartOption}
             style={{ height: 420 }}
+            onChartReady={setMessageChart}
             onEvents={{
               click: (params: { name?: string }) => {
                 if (params.name) {
@@ -726,6 +738,7 @@ export function DashboardPage() {
           <ReactECharts
             option={worksChartOption}
             style={{ height: 420 }}
+            onChartReady={setWorksChart}
             onEvents={{
               click: (params: { name?: string }) => {
                 if (params.name === '关注' || params.name === '喜欢') {
@@ -766,39 +779,37 @@ export function DashboardPage() {
 
   return (
     <section className="page dashboard-page">
-      <div className="dashboard-header">
-        <div className="dashboard-title-block">
-          <h3>
-            <span className="dashboard-brand-mark">🚀</span>
-            Data<span>Center</span>
-          </h3>
-        </div>
-
-        <div className="dashboard-header-actions">
-          <div className="date-controller">
-            <button type="button" className="date-arrow" onClick={() => adjustDate(-1)}>
-              ‹
+      <PageIntro
+        eyebrow={pageInfo.eyebrow}
+        title={<h3>{pageInfo.title}</h3>}
+        description={pageInfo.description}
+        actions={
+          <>
+            <div className="date-controller">
+              <button type="button" className="date-arrow" onClick={() => adjustDate(-1)}>
+                ‹
+              </button>
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              <button type="button" className="date-arrow" onClick={() => adjustDate(1)}>
+                ›
+              </button>
+            </div>
+            <button
+              type="button"
+              className="header-button header-button-solid"
+              onClick={() => setDate(formatDateInput(new Date()))}
+            >
+              今天
             </button>
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-            <button type="button" className="date-arrow" onClick={() => adjustDate(1)}>
-              ›
-            </button>
-          </div>
-          <button
-            type="button"
-            className="header-button header-button-solid"
-            onClick={() => setDate(formatDateInput(new Date()))}
-          >
-            今天
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error ? <div className="error-banner">接口加载失败：{error}</div> : null}
 
       <div className="dashboard-sort-root">
         {topSections.map((sectionId) => {
-          if (sectionId === 'nice') {
+          if (sectionId === 'cards') {
             return (
               <SortableWrap
                 key={sectionId}
@@ -811,93 +822,78 @@ export function DashboardPage() {
                 <section className="dashboard-section">
                   <button
                     type="button"
-                    className={`section-header theme-nice ${collapsed.nice ? 'is-collapsed' : ''}`}
-                    onClick={() => toggleSection('nice')}
+                    className={`section-header theme-nice ${collapsed.cards ? 'is-collapsed' : ''}`}
+                    onClick={() => toggleSection('cards')}
                   >
                     <span className="section-title-group">
                       <span className="drag-handle">⋮⋮</span>
-                      <span className="section-title">NiceBot 统计信息</span>
+                      <span className="section-title">核心指标</span>
                     </span>
                     <span className="toggle-icon">⌄</span>
                   </button>
 
-                  {!collapsed.nice ? (
+                  {!collapsed.cards ? (
                     <div className="section-content">
-                      {niceSubSections.map((subSectionId) =>
-                        subSectionId === 'cards' ? (
+                      <div className="dashboard-card-grid">
+                        {niceCards.map((cardId) => (
                           <SortableWrap
-                            key={subSectionId}
-                            id={subSectionId}
-                            dragType="nice-sub"
-                            className="sub-section-wrapper"
+                            key={cardId}
+                            id={cardId}
+                            dragType="nice-card"
+                            className="dashboard-card-wrap"
                             onDragStart={setDragState}
-                            onDrop={dropNiceSubSection}
+                            onDrop={dropNiceCard}
                           >
-                            <section className="sub-section">
-                              <button
-                                type="button"
-                                className={`sub-title ${collapsed['nice-cards'] ? 'is-collapsed' : ''}`}
-                                onClick={() => toggleSection('nice-cards')}
-                              >
-                                <span className="drag-handle">⋮⋮</span>
-                                核心指标
-                              </button>
-                              {!collapsed['nice-cards'] ? (
-                                <div className="dashboard-card-grid">
-                                  {niceCards.map((cardId) => (
-                                    <SortableWrap
-                                      key={cardId}
-                                      id={cardId}
-                                      dragType="nice-card"
-                                      className="dashboard-card-wrap"
-                                      onDragStart={setDragState}
-                                      onDrop={dropNiceCard}
-                                    >
-                                      {niceCardMap[cardId]}
-                                    </SortableWrap>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </section>
+                            {niceCardMap[cardId]}
                           </SortableWrap>
-                        ) : (
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              </SortableWrap>
+            )
+          }
+
+          if (sectionId === 'charts') {
+            return (
+              <SortableWrap
+                key={sectionId}
+                id={sectionId}
+                dragType="top"
+                className="section-wrapper"
+                onDragStart={setDragState}
+                onDrop={dropTopSection}
+              >
+                <section className="dashboard-section">
+                  <button
+                    type="button"
+                    className={`section-header theme-nice ${collapsed.charts ? 'is-collapsed' : ''}`}
+                    onClick={() => toggleSection('charts')}
+                  >
+                    <span className="section-title-group">
+                      <span className="drag-handle">⋮⋮</span>
+                      <span className="section-title">数据图表</span>
+                    </span>
+                    <span className="toggle-icon">⌄</span>
+                  </button>
+
+                  {!collapsed.charts ? (
+                    <div className="section-content">
+                      <div className="dashboard-chart-row">
+                        {niceCharts.map((chartId) => (
                           <SortableWrap
-                            key={subSectionId}
-                            id={subSectionId}
-                            dragType="nice-sub"
-                            className="sub-section-wrapper"
+                            key={chartId}
+                            id={chartId}
+                            dragType="nice-chart"
+                            className={`chart-wrap ${chartId === 'history' ? 'chart-wrap-large' : 'chart-wrap-small'}`}
                             onDragStart={setDragState}
-                            onDrop={dropNiceSubSection}
+                            onDrop={dropNiceChart}
                           >
-                            <section className="sub-section">
-                              <button
-                                type="button"
-                                className={`sub-title ${collapsed['nice-charts'] ? 'is-collapsed' : ''}`}
-                                onClick={() => toggleSection('nice-charts')}
-                              >
-                                <span className="drag-handle">⋮⋮</span>
-                                数据图表
-                              </button>
-                              {!collapsed['nice-charts'] ? (
-                                <div className="dashboard-chart-row">
-                                  {niceCharts.map((chartId) => (
-                                    <SortableWrap
-                                      key={chartId}
-                                      id={chartId}
-                                      dragType="nice-chart"
-                                      className={`chart-wrap ${chartId === 'history' ? 'chart-wrap-large' : 'chart-wrap-small'}`}
-                                      onDragStart={setDragState}
-                                      onDrop={dropNiceChart}
-                                    >
-                                      {niceChartMap[chartId]}
-                                    </SortableWrap>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </section>
+                            {niceChartMap[chartId]}
                           </SortableWrap>
-                        ),
-                      )}
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                 </section>
@@ -923,7 +919,7 @@ export function DashboardPage() {
                 >
                   <span className="section-title-group">
                     <span className="drag-handle">⋮⋮</span>
-                    <span className="section-title">NiceBot 消息明细</span>
+                    <span className="section-title">消息明细</span>
                   </span>
                   <span className="toggle-icon">⌄</span>
                 </button>

@@ -13,15 +13,20 @@ export function AppShell() {
     const saved = localStorage.getItem('board-theme')
     return saved === 'light' ? 'light' : 'dark'
   })
+  const [sidebarPinned, setSidebarPinned] = useState(() => localStorage.getItem('board-sidebar-pinned') === 'true')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('board-theme', theme)
   }, [theme])
 
+  useEffect(() => {
+    localStorage.setItem('board-sidebar-pinned', String(sidebarPinned))
+  }, [sidebarPinned])
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={`shell${sidebarPinned ? ' is-sidebar-pinned' : ''}`}>
+      <aside className={`sidebar${sidebarPinned ? ' is-pinned' : ''}`}>
         <div className="sidebar-brand">
           <div className="sidebar-logo" aria-hidden="true">
             🚀
@@ -53,6 +58,21 @@ export function AppShell() {
         </nav>
 
         <div className="sidebar-footer">
+          <button
+            type="button"
+            className={`sidebar-pin-toggle${sidebarPinned ? ' is-active' : ''}`}
+            onClick={() => setSidebarPinned((current) => !current)}
+            title={sidebarPinned ? '取消固定侧边栏' : '固定侧边栏'}
+          >
+            <span className="nav-badge" aria-hidden="true">
+              {sidebarPinned ? '◧' : '◨'}
+            </span>
+            <span className="nav-copy">
+              <span className="nav-label">{sidebarPinned ? '取消固定' : '固定侧栏'}</span>
+              <span className="nav-hint">{sidebarPinned ? '点击恢复悬停展开' : '点击后保持展开显示'}</span>
+            </span>
+          </button>
+
           <button
             type="button"
             className="sidebar-theme-toggle"
