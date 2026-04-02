@@ -15,11 +15,20 @@ type ActiveCell = {
 } | null
 
 type SortDirection = 'asc' | 'desc'
+type UserQuickFilter = '' | 'active' | 'special' | 'stale'
 
 type ChartDatum = {
   name: string
   value: number
   filterValue: string
+}
+
+type GroupedChartDatum = {
+  platformName: string
+  platformFilterValue: string
+  typeName: string
+  typeFilterValue: string
+  value: number
 }
 
 type UserSectionId = 'cards' | 'charts' | 'table'
@@ -30,6 +39,7 @@ type UserPanelStats = {
   special: number
   stale: number
   platformData: ChartDatum[]
+  platformTypeData: GroupedChartDatum[]
   validData: ChartDatum[]
   freshnessData: ChartDatum[]
   latestTrendData: ChartDatum[]
@@ -192,6 +202,7 @@ function compareMixed(left: string, right: string, direction: SortDirection) {
 
 function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<typeof getDerivedValues> }>): UserPanelStats {
   const platformMap = new Map<string, ChartDatum>()
+  const platformTypeMap = new Map<string, GroupedChartDatum>()
   const validMap = new Map<string, ChartDatum>()
   const freshnessMap = new Map<string, ChartDatum>([
     ['24小时内', { name: '24小时内', value: 0, filterValue: '24小时内' }],
@@ -214,6 +225,14 @@ function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<
       name: derived.platformName,
       value: (platformMap.get(derived.currentPlatform)?.value ?? 0) + 1,
       filterValue: derived.currentPlatform,
+    })
+    const platformTypeKey = `${derived.currentPlatform}::${derived.currentValid}`
+    platformTypeMap.set(platformTypeKey, {
+      platformName: derived.platformName,
+      platformFilterValue: derived.currentPlatform,
+      typeName: derived.validName,
+      typeFilterValue: derived.currentValid,
+      value: (platformTypeMap.get(platformTypeKey)?.value ?? 0) + 1,
     })
     validMap.set(derived.currentValid, {
       name: derived.validName,
@@ -248,6 +267,7 @@ function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<
     special,
     stale,
     platformData: Array.from(platformMap.values()),
+    platformTypeData: Array.from(platformTypeMap.values()),
     validData: Array.from(validMap.values()),
     freshnessData: Array.from(freshnessMap.values()),
     latestTrendData: Array.from(monthMap.values())
@@ -275,6 +295,7 @@ export function UserManagePage() {
   const [validFilter, setValidFilter] = useState('')
   const [freshnessFilter, setFreshnessFilter] = useState('')
   const [latestMonthFilter, setLatestMonthFilter] = useState('')
+  const [quickFilter, setQuickFilter] = useState<UserQuickFilter>('')
   const [sortColumn, setSortColumn] = useState('USERID')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [loading, setLoading] = useState(true)
@@ -402,8 +423,24 @@ export function UserManagePage() {
         const matchesValid = !validFilter || item.derived.currentValid === validFilter
         const matchesFreshness = !freshnessFilter || item.derived.freshness === freshnessFilter
         const matchesLatestMonth = !latestMonthFilter || item.derived.latestMonth === latestMonthFilter
+        const numericValid = Number(item.derived.currentValid)
+        const matchesQuickFilter =
+          quickFilter === 'active'
+            ? numericValid > 0
+            : quickFilter === 'special'
+              ? numericValid === 1
+              : quickFilter === 'stale'
+                ? item.derived.freshness === '7天以上' || item.derived.freshness === '从未抓取'
+                : true
 
-        return matchesSearch && matchesPlatform && matchesValid && matchesFreshness && matchesLatestMonth
+        return (
+          matchesSearch &&
+          matchesPlatform &&
+          matchesValid &&
+          matchesFreshness &&
+          matchesLatestMonth &&
+          matchesQuickFilter
+        )
       })
       .sort((left, right) => {
         const leftValue =
@@ -421,9 +458,36 @@ export function UserManagePage() {
 
         return compareMixed(String(leftValue ?? ''), String(rightValue ?? ''), sortDirection)
       })
-  }, [deferredQuery, derivedRows, freshnessFilter, latestMonthFilter, platformFilter, sortColumn, sortDirection, validFilter])
+  }, [
+    deferredQuery,
+    derivedRows,
+    freshnessFilter,
+    latestMonthFilter,
+    platformFilter,
+    quickFilter,
+    sortColumn,
+    sortDirection,
+    validFilter,
+  ])
 
   const panelStats = useMemo(() => buildUserPanelStats(filteredRows), [filteredRows])
+  const basePanelStats = useMemo(() => buildUserPanelStats(derivedRows), [derivedRows])
+  const hasUserFilters = Boolean(
+    deferredQuery.trim() || platformFilter || validFilter || freshnessFilter || latestMonthFilter || quickFilter,
+  )
+
+  function clearAllFilters() {
+    setQuery('')
+    setPlatformFilter('')
+    setValidFilter('')
+    setFreshnessFilter('')
+    setLatestMonthFilter('')
+    setQuickFilter('')
+  }
+
+  function toggleQuickFilter(nextFilter: Exclude<UserQuickFilter, ''>) {
+    setQuickFilter((current) => (current === nextFilter ? '' : nextFilter))
+  }
 
   function updateDraft(rowKey: string, field: string, value: string) {
     setDrafts((current) => ({
@@ -525,45 +589,58 @@ export function UserManagePage() {
     setSortDirection('asc')
   }
 
-  useEffect(() => bindBlankClickReset(platformChart, () => setPlatformFilter('')), [platformChart])
+  useEffect(
+    () =>
+      bindBlankClickReset(platformChart, () => {
+        setPlatformFilter('')
+        setValidFilter('')
+      }),
+    [platformChart],
+  )
   useEffect(() => bindBlankClickReset(validChart, () => setValidFilter('')), [validChart])
   useEffect(() => bindBlankClickReset(freshnessChart, () => setFreshnessFilter('')), [freshnessChart])
   useEffect(() => bindBlankClickReset(latestChart, () => setLatestMonthFilter('')), [latestChart])
 
   const platformChartOption = useMemo<EChartsOption>(
-    () => ({
-      backgroundColor: 'transparent',
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: 20, right: 20, top: 24, bottom: 12, containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: panelStats.platformData.map((item) => item.name),
-        axisLabel: { color: chartTheme.axis },
-        axisLine: { lineStyle: { color: chartTheme.grid } },
-      },
-      yAxis: {
-        type: 'value',
-        axisLabel: { color: chartTheme.axis },
-        splitLine: { lineStyle: { color: chartTheme.split } },
-      },
-      series: [
-        {
+    () => {
+      const platformEntries = panelStats.platformData
+      const platformNames = platformEntries.map((item) => item.name)
+      const typeEntries = panelStats.validData
+      const typePalette = ['#00d5ff', '#15e8a6', '#ffd35a', '#8f6bff', '#ff7b7b', '#6fd6ff']
+      const valueMap = new Map(
+        panelStats.platformTypeData.map((item) => [`${item.platformFilterValue}::${item.typeFilterValue}`, item.value]),
+      )
+
+      return {
+        backgroundColor: 'transparent',
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+        },
+        legend: {
+          top: 0,
+          right: 0,
+          textStyle: { color: chartTheme.muted },
+        },
+        grid: { left: 20, right: 20, top: 52, bottom: 12, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: platformNames,
+          axisLabel: { color: chartTheme.axis },
+          axisLine: { lineStyle: { color: chartTheme.grid } },
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { color: chartTheme.axis },
+          splitLine: { lineStyle: { color: chartTheme.split } },
+        },
+        series: typeEntries.map((typeItem, index) => ({
+          name: typeItem.name,
           type: 'bar',
-          data: panelStats.platformData.map((item) => ({ value: item.value, filterValue: item.filterValue })),
-          barWidth: 42,
+          barMaxWidth: 28,
           itemStyle: {
-            borderRadius: [12, 12, 0, 0],
-            color: {
-              type: 'linear',
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: '#00d5ff' },
-                { offset: 1, color: '#15e8a6' },
-              ],
-            },
+            borderRadius: [10, 10, 0, 0],
+            color: typePalette[index % typePalette.length],
           },
           label: {
             show: true,
@@ -571,10 +648,15 @@ export function UserManagePage() {
             color: chartTheme.text,
             fontWeight: 'bold',
           },
-        },
-      ],
-    }),
-    [chartTheme, panelStats.platformData],
+          data: platformEntries.map((platformItem) => ({
+            value: valueMap.get(`${platformItem.filterValue}::${typeItem.filterValue}`) ?? 0,
+            platformFilterValue: platformItem.filterValue,
+            validFilterValue: typeItem.filterValue,
+          })),
+        })),
+      }
+    },
+    [chartTheme, panelStats.platformData, panelStats.platformTypeData, panelStats.validData],
   )
 
   const validChartOption = useMemo<EChartsOption>(
@@ -720,22 +802,40 @@ export function UserManagePage() {
         {!collapsed.cards ? (
           <div className="section-content">
             <div className="stats-grid user-manage-kpi-grid">
-              <article className="dashboard-card accent-cyan">
-                <p className="dashboard-card-title">筛选后用户数</p>
-                <strong className="dashboard-card-value">{loading ? '...' : panelStats.total}</strong>
-              </article>
-              <article className="dashboard-card accent-green">
-                <p className="dashboard-card-title">有效关注数</p>
+              <button
+                type="button"
+                className={`dashboard-card user-manage-kpi-card accent-cyan${hasUserFilters ? ' is-active' : ''}`}
+                onClick={clearAllFilters}
+              >
+                <p className="dashboard-card-title">{hasUserFilters ? '筛选后用户数' : '全部关注'}</p>
+                <strong className="dashboard-card-value">
+                  {loading ? '...' : hasUserFilters ? panelStats.total : basePanelStats.total}
+                </strong>
+              </button>
+              <button
+                type="button"
+                className={`dashboard-card user-manage-kpi-card accent-green${quickFilter === 'active' ? ' is-active' : ''}`}
+                onClick={() => toggleQuickFilter('active')}
+              >
+                <p className="dashboard-card-title">有效关注</p>
                 <strong className="dashboard-card-value">{loading ? '...' : panelStats.active}</strong>
-              </article>
-              <article className="dashboard-card accent-gold">
-                <p className="dashboard-card-title">特别关注数</p>
+              </button>
+              <button
+                type="button"
+                className={`dashboard-card user-manage-kpi-card accent-gold${quickFilter === 'special' ? ' is-active' : ''}`}
+                onClick={() => toggleQuickFilter('special')}
+              >
+                <p className="dashboard-card-title">特别关注</p>
                 <strong className="dashboard-card-value">{loading ? '...' : panelStats.special}</strong>
-              </article>
-              <article className="dashboard-card">
-                <p className="dashboard-card-title">待巡检账号</p>
+              </button>
+              <button
+                type="button"
+                className={`dashboard-card user-manage-kpi-card${quickFilter === 'stale' ? ' is-active' : ''}`}
+                onClick={() => toggleQuickFilter('stale')}
+              >
+                <p className="dashboard-card-title">待巡检</p>
                 <strong className="dashboard-card-value">{loading ? '...' : panelStats.stale}</strong>
-              </article>
+              </button>
             </div>
           </div>
         ) : null}
@@ -759,13 +859,18 @@ export function UserManagePage() {
             <div className="user-manage-chart-grid">
               <section className="panel user-manage-chart-card user-manage-chart-card-wide">
                 <div className="panel-head">
-                  <h4>平台分布</h4>
+                  <h4>各平台关注类型分布图</h4>
                 </div>
                 <ReactECharts
                   option={platformChartOption}
                   style={{ height: 320 }}
                   onChartReady={setPlatformChart}
-                  onEvents={{ click: (params: { data?: { filterValue?: string } }) => setPlatformFilter(params.data?.filterValue ?? '') }}
+                  onEvents={{
+                    click: (params: { data?: { platformFilterValue?: string; validFilterValue?: string } }) => {
+                      setPlatformFilter(params.data?.platformFilterValue ?? '')
+                      setValidFilter(params.data?.validFilterValue ?? '')
+                    },
+                  }}
                 />
               </section>
 
@@ -861,11 +966,7 @@ export function UserManagePage() {
                 type="button"
                 className="reset-button"
                 onClick={() => {
-                  setQuery('')
-                  setPlatformFilter('')
-                  setValidFilter('')
-                  setFreshnessFilter('')
-                  setLatestMonthFilter('')
+                  clearAllFilters()
                   setActiveCell(null)
                 }}
               >

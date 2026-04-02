@@ -502,6 +502,27 @@ a {
   padding: 20px;
 }
 
+.user-manage-kpi-card {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.user-manage-kpi-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 28px rgba(0, 169, 194, 0.12);
+}
+
+.user-manage-kpi-card.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 16px 30px rgba(0, 169, 194, 0.16);
+}
+
 .stat-title,
 .dashboard-card-title {
   margin: 0 0 12px;
