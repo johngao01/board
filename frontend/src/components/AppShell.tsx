@@ -1,13 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { getDocumentTitle } from '../config/page-info'
-
-const navItems = [
-  { to: '/', label: '主页', short: '主', hint: '数据总览', end: true },
-  { to: '/tiktok', label: 'TikTok', short: 'T', hint: 'TikTok 统计' },
-  { to: '/users', label: 'User 管理', short: '用', hint: '用户表编辑' },
-  { to: '/juhe', label: 'Juhe', short: '聚', hint: '聚合面板' },
-]
+import { getDocumentTitle, sidebarNavItems } from '../config/page-info'
 
 export function AppShell() {
   const location = useLocation()
@@ -44,7 +37,7 @@ export function AppShell() {
         </div>
 
         <nav className="nav" aria-label="主导航">
-          {navItems.map((item) => (
+          {sidebarNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -75,7 +68,6 @@ export function AppShell() {
             </span>
             <span className="nav-copy">
               <span className="nav-label">{sidebarPinned ? '取消固定' : '固定侧栏'}</span>
-              <span className="nav-hint">{sidebarPinned ? '点击恢复悬停展开' : '点击后保持展开显示'}</span>
             </span>
           </button>
 
@@ -90,7 +82,6 @@ export function AppShell() {
             </span>
             <span className="nav-copy">
               <span className="nav-label">{theme === 'dark' ? '切换浅色' : '切换深色'}</span>
-              <span className="nav-hint">主题开关仅保留在侧栏</span>
             </span>
           </button>
         </div>

@@ -19,7 +19,7 @@
   color: var(--text);
   background:
     radial-gradient(circle at top left, rgba(0, 234, 255, 0.08), transparent 24%),
-    linear-gradient(180deg, #090d16 0%, #0b0f19 100%);
+    linear-gradient(190deg, #090d16 0%, #0b0f19 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -45,7 +45,7 @@
   --shadow: 0 18px 40px rgba(25, 62, 91, 0.08);
   background:
     radial-gradient(circle at top left, rgba(0, 169, 194, 0.08), transparent 22%),
-    linear-gradient(180deg, #f5f9fd 0%, #edf3f9 100%);
+    linear-gradient(190deg, #f5f9fd 0%, #edf3f9 100%);
 }
 
 * {
@@ -104,12 +104,12 @@ a {
 }
 
 .shell.is-sidebar-pinned {
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 190px 1fr;
 }
 
 .shell:has(.sidebar:hover),
 .shell:has(.sidebar:focus-within) {
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 190px 1fr;
 }
 
 .sidebar {
@@ -131,7 +131,7 @@ a {
 .sidebar:hover,
 .sidebar:focus-within,
 .sidebar.is-pinned {
-  width: 280px;
+  width: 190px;
 }
 
 .sidebar-brand {
@@ -587,7 +587,7 @@ a {
 
 .empty-state,
 .table-empty-state {
-  min-height: 180px;
+  min-height: 190px;
   display: grid;
   place-items: center;
   color: var(--muted);
