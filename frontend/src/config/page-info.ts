@@ -28,3 +28,28 @@ export const mainPageInfo: Record<MainPageInfoKey, PageInfoConfig> = {
     description: '统一查看聚合资源质量、来源分布和上海专项趋势。',
   },
 }
+
+export function getDocumentTitle(pathname: string) {
+  if (pathname === '/') {
+    return mainPageInfo.dashboard.title
+  }
+
+  if (pathname === '/tiktok') {
+    return mainPageInfo.tiktok.title
+  }
+
+  if (pathname === '/users') {
+    return mainPageInfo.users.title
+  }
+
+  if (pathname === '/juhe') {
+    return mainPageInfo.juhe.title
+  }
+
+  if (pathname.startsWith('/user/')) {
+    const identity = decodeURIComponent(pathname.slice('/user/'.length)).trim()
+    return identity ? `${identity} 的用户报告` : '用户报告'
+  }
+
+  return 'DataCenter Board'
+}

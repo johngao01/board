@@ -1,5 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { getDocumentTitle } from '../config/page-info'
 
 const navItems = [
   { to: '/', label: '主页', short: '主', hint: '数据总览', end: true },
@@ -9,6 +10,7 @@ const navItems = [
 ]
 
 export function AppShell() {
+  const location = useLocation()
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('board-theme')
     return saved === 'light' ? 'light' : 'dark'
@@ -23,6 +25,10 @@ export function AppShell() {
   useEffect(() => {
     localStorage.setItem('board-sidebar-pinned', String(sidebarPinned))
   }, [sidebarPinned])
+
+  useEffect(() => {
+    document.title = getDocumentTitle(location.pathname)
+  }, [location.pathname])
 
   return (
     <div className={`shell${sidebarPinned ? ' is-sidebar-pinned' : ''}`}>
