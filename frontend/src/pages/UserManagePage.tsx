@@ -610,6 +610,26 @@ export function UserManagePage() {
       const valueMap = new Map(
         panelStats.platformTypeData.map((item) => [`${item.platformFilterValue}::${item.typeFilterValue}`, item.value]),
       )
+      const allPlatformSeries = {
+        name: '所有关注',
+        type: 'bar' as const,
+        barMaxWidth: 28,
+        itemStyle: {
+          borderRadius: [10, 10, 0, 0] as [number, number, number, number],
+          color: '#4c8dff',
+        },
+        label: {
+          show: true,
+          position: 'top' as const,
+          color: chartTheme.text,
+          fontWeight: 'bold' as const,
+        },
+        data: platformEntries.map((platformItem) => ({
+          value: platformItem.value,
+          platformFilterValue: platformItem.filterValue,
+          validFilterValue: '',
+        })),
+      }
 
       return {
         backgroundColor: 'transparent',
@@ -634,26 +654,29 @@ export function UserManagePage() {
           axisLabel: { color: chartTheme.axis },
           splitLine: { lineStyle: { color: chartTheme.split } },
         },
-        series: typeEntries.map((typeItem, index) => ({
-          name: typeItem.name,
-          type: 'bar',
-          barMaxWidth: 28,
-          itemStyle: {
-            borderRadius: [10, 10, 0, 0],
-            color: typePalette[index % typePalette.length],
-          },
-          label: {
-            show: true,
-            position: 'top',
-            color: chartTheme.text,
-            fontWeight: 'bold',
-          },
-          data: platformEntries.map((platformItem) => ({
-            value: valueMap.get(`${platformItem.filterValue}::${typeItem.filterValue}`) ?? 0,
-            platformFilterValue: platformItem.filterValue,
-            validFilterValue: typeItem.filterValue,
+        series: [
+          allPlatformSeries,
+          ...typeEntries.map((typeItem, index) => ({
+            name: typeItem.name,
+            type: 'bar' as const,
+            barMaxWidth: 28,
+            itemStyle: {
+              borderRadius: [10, 10, 0, 0] as [number, number, number, number],
+              color: typePalette[index % typePalette.length],
+            },
+            label: {
+              show: true,
+              position: 'top' as const,
+              color: chartTheme.text,
+              fontWeight: 'bold' as const,
+            },
+            data: platformEntries.map((platformItem) => ({
+              value: valueMap.get(`${platformItem.filterValue}::${typeItem.filterValue}`) ?? 0,
+              platformFilterValue: platformItem.filterValue,
+              validFilterValue: typeItem.filterValue,
+            })),
           })),
-        })),
+        ],
       }
     },
     [chartTheme, panelStats.platformData, panelStats.platformTypeData, panelStats.validData],
@@ -863,6 +886,7 @@ export function UserManagePage() {
                 </div>
                 <ReactECharts
                   option={platformChartOption}
+                  notMerge
                   style={{ height: 320 }}
                   onChartReady={setPlatformChart}
                   onEvents={{
