@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "flask>=3.1.2",
+    "loguru>=0.7.3",
     "pandas>=2.3.3",
     "pandas-stubs~=2.3.3",
+    "python-telegram-bot>=22.5",
     "pymysql>=1.1.2",
 ]

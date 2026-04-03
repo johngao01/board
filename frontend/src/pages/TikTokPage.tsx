@@ -60,6 +60,7 @@ export function TikTokPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<TikTokDashboardState>(emptyState)
+  const [collapsed, setCollapsed] = useState({ cards: false })
 
   useEffect(() => {
     let cancelled = false
@@ -117,6 +118,13 @@ export function TikTokPage() {
     setDate(formatDateInput(target))
   }
 
+  function toggleSection() {
+    setCollapsed((current) => ({
+      ...current,
+      cards: !current.cards,
+    }))
+  }
+
   return (
     <section className="page">
       <PageIntro
@@ -147,26 +155,46 @@ export function TikTokPage() {
 
       {error ? <div className="error-banner">接口加载失败：{error}</div> : null}
 
-      <div className="dashboard-card-grid">
-        <MetricCard
-          title="当天爬取 Aweme"
-          value={loading ? '...' : data.scraped?.val ?? 0}
-          previous={data.scraped?.prev ?? 0}
-          trend={data.scraped?.trend ?? 0}
-        />
-        <MetricCard
-          title="活跃用户"
-          value={loading ? '...' : data.active?.val ?? 0}
-          previous={data.active?.prev ?? 0}
-          trend={data.active?.trend ?? 0}
-        />
-        <MetricCard
-          title="新增用户"
-          value={loading ? '...' : data.fresh?.val ?? 0}
-          previous={data.fresh?.prev ?? 0}
-          trend={data.fresh?.trend ?? 0}
-        />
-        <MetricCard title="人均采集" value={loading ? '...' : avg} previous="-" trend={0} />
+      <div className="dashboard-sort-root">
+        <section className="dashboard-section">
+          <button
+            type="button"
+            className={`section-header theme-nice ${collapsed.cards ? 'is-collapsed' : ''}`}
+            onClick={toggleSection}
+          >
+            <span className="section-title-group">
+              <span className="drag-handle">⋮⋮</span>
+              <span className="section-title">核心指标</span>
+            </span>
+            <span className="toggle-icon">⌄</span>
+          </button>
+
+          {!collapsed.cards ? (
+            <div className="section-content">
+              <div className="dashboard-card-grid">
+                <MetricCard
+                  title="当天爬取 Aweme"
+                  value={loading ? '...' : data.scraped?.val ?? 0}
+                  previous={data.scraped?.prev ?? 0}
+                  trend={data.scraped?.trend ?? 0}
+                />
+                <MetricCard
+                  title="活跃用户"
+                  value={loading ? '...' : data.active?.val ?? 0}
+                  previous={data.active?.prev ?? 0}
+                  trend={data.active?.trend ?? 0}
+                />
+                <MetricCard
+                  title="新增用户"
+                  value={loading ? '...' : data.fresh?.val ?? 0}
+                  previous={data.fresh?.prev ?? 0}
+                  trend={data.fresh?.trend ?? 0}
+                />
+                <MetricCard title="人均采集" value={loading ? '...' : avg} previous="-" trend={0} />
+              </div>
+            </div>
+          ) : null}
+        </section>
       </div>
     </section>
   )

@@ -236,12 +236,80 @@ def api_juhe_shanghai():
             vals_sh.append(res_sh.get(d_s, 0))
             curr += datetime.timedelta(days=1)
 
+        # --- 3. 上海近7天平台分布 ---
+        t_platform_start = time.time()
+        start_7_dt = end_dt - datetime.timedelta(days=7)
+        start_7_str = start_7_dt.strftime('%Y-%m-%d 00:00:00')
+
+        cur.execute(
+            """
+            SELECT DATE_FORMAT(CREATETIME, '%%Y-%%m-%%d') as d, SOURCED, COUNT(*) as cnt
+            FROM juhe
+            WHERE CREATETIME >= %s
+              AND CREATETIME < %s
+              AND CITY >= '310000'
+              AND CITY <= '319999'
+            GROUP BY d, SOURCED
+            ORDER BY d ASC, cnt DESC
+            """,
+            (start_7_str, end_str)
+        )
+        res_platform_7_raw = cur.fetchall()
+        print(f"[{date_str} SH] 近7天平台分布: {time.time() - t_platform_start:.4f}s")
+
+        platform_totals = {}
+        daily_platform_map = {}
+        for row in res_platform_7_raw:
+            day_key, platform_name, count = row[0], row[1] or '未知来源', int(row[2] or 0)
+            platform_totals[platform_name] = platform_totals.get(platform_name, 0) + count
+            if day_key not in daily_platform_map:
+                daily_platform_map[day_key] = {}
+            daily_platform_map[day_key][platform_name] = count
+
+        top_platforms = [
+            item[0]
+            for item in sorted(platform_totals.items(), key=lambda x: x[1], reverse=True)[:6]
+        ]
+
+        dates_7 = []
+        curr_7 = start_7_dt
+        while curr_7 < end_dt:
+            dates_7.append(curr_7.strftime('%Y-%m-%d'))
+            curr_7 += datetime.timedelta(days=1)
+
+        platform_series = []
+        other_series = [0] * len(dates_7)
+        for platform_name in top_platforms:
+            values = []
+            for idx, day_key in enumerate(dates_7):
+                day_values = daily_platform_map.get(day_key, {})
+                value = int(day_values.get(platform_name, 0))
+                values.append(value)
+            platform_series.append({
+                "name": platform_name,
+                "values": values
+            })
+
+        if platform_totals:
+            for idx, day_key in enumerate(dates_7):
+                day_values = daily_platform_map.get(day_key, {})
+                other_series[idx] = sum(
+                    count for platform_name, count in day_values.items() if platform_name not in top_platforms
+                )
+
+            if any(other_series):
+                platform_series.append({
+                    "name": "其他",
+                    "values": other_series
+                })
+
         print(f"[{date_str} SH] >>> 接口总耗时: {time.time() - t_start:.4f}s <<<")
 
         return jsonify({
             "total": total_sh, "valid": valid_sh,
             "sh_breakdown": sh_breakdown,
-            "history": {"dates": history_dates, "sh_vals": vals_sh, "all_vals": vals_all}
+            "history": {"dates": history_dates, "sh_vals": vals_sh, "all_vals": vals_all},
+            "platform_history_7d": {"dates": dates_7, "series": platform_series}
         })
 
     except Exception as e:

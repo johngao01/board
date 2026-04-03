@@ -6,6 +6,7 @@
 - Juhe 聚合数据页
 - TikTokBot 独立统计页
 - 关注用户管理页
+- 消息删除管理页
 - User Report 用户报告页
 
 后端负责提供 API 和托管前端构建产物，前端负责页面路由、交互、图表和表格展示。
@@ -22,6 +23,7 @@
 board/
 ├─ app.py                  Flask 主入口，注册 API 并托管 frontend/dist
 ├─ juhe.py                 Juhe 相关接口
+├─ message_manage.py       消息管理页后端接口与服务逻辑
 ├─ user_report.py          用户报告相关接口
 ├─ config.py               环境变量和数据库配置加载
 ├─ frontend/               React 前端
@@ -29,9 +31,11 @@ board/
 │  ├─ src/components/AppShell.tsx
 │  ├─ src/components/PageIntro.tsx
 │  ├─ src/config/page-info.ts
+│  ├─ src/lib/message-delete.ts
 │  ├─ src/lib/session-cache.ts
 │  ├─ src/pages/DashboardPage.tsx
 │  ├─ src/pages/JuhePage.tsx
+│  ├─ src/pages/MessageDeletePage.tsx
 │  ├─ src/pages/TikTokPage.tsx
 │  ├─ src/pages/UserManagePage.tsx
 │  └─ src/pages/UserReportPage.tsx
@@ -74,6 +78,21 @@ board/
 - 图表支持点击筛选
 - 平台图已调整为“各平台关注类型分布图”，可按平台和关注类型联动筛选
 - 表格支持双击单元格编辑并保存
+
+### 消息管理页
+
+- 页面访问路径：`/message-manage`
+- 包含 4 个功能页签：
+  - 条件查询
+  - SQL 查询
+  - 消息 ID 区间
+  - 消息检查
+- 条件查询和消息检查都基于 `messages` 表字段构造可视化条件
+- SQL 查询页固定使用 `SELECT MESSAGE_ID FROM messages WHERE ...`
+- 消息 ID 区间页固定处理 `chat_id=708424141`
+- 所有删除操作都遵循“先预览，再确认执行”
+- 日志已拆分为按功能独立记录，页面底部会随当前页签显示对应日志
+- 支持在页面内直接清理当前功能日志
 
 ### User Report 页
 
@@ -118,6 +137,18 @@ TIKTOK_DB_PASSWORD=your_password_here
 JUHE_DB_HOST=127.0.0.1
 JUHE_DB_USER=root
 JUHE_DB_PASSWORD=your_password_here
+
+MESSAGE_DELETE_LOG_TAIL_LINES=120
+MESSAGE_DELETE_DOWNLOAD_ROOT=D:\python\download
+```
+
+消息管理页日志默认写入：
+
+```text
+logs/message_manage_condition_query.log
+logs/message_manage_sql_query.log
+logs/message_manage_id_range.log
+logs/message_manage_message_check.log
 ```
 
 ## 安装依赖
@@ -216,6 +247,7 @@ frontend/dist
 - `/juhe`
 - `/tiktok`
 - `/users`
+- `/message-manage`
 - `/user/<identity>`
 
 例如：
@@ -233,6 +265,15 @@ http://127.0.0.1:12345/user/周妍希
 - `/api/list/niceme_messages`
 - `/api/niceme/users`
 - `/api/niceme/users/<user_id>`
+- `/api/niceme/message-delete/sql/preview`
+- `/api/niceme/message-delete/sql/execute`
+- `/api/niceme/message-delete/sql/execute-single`
+- `/api/niceme/message-delete/id-range/preview`
+- `/api/niceme/message-delete/id-range/execute`
+- `/api/niceme/message-delete/delivery-check`
+- `/api/niceme/message-delete/query-fields`
+- `/api/niceme/message-delete/logs`
+- `/api/niceme/message-delete/logs/clear`
 - `/api/tiktok/scraped`
 - `/api/tiktok/active`
 - `/api/tiktok/new`
@@ -255,6 +296,7 @@ frontend/src/config/page-info.ts
 - 首页
 - TikTok 页
 - 关注用户管理页
+- 消息删除管理页
 - Juhe 页
 
 ## 缓存行为
@@ -281,6 +323,7 @@ frontend/src/lib/session-cache.ts
 - TikTokBot 统计从首页拆分为独立页面
 - Juhe 页顶部样式与主页统一，保留聚合监控内容
 - 关注用户管理页重组为核心指标、图表报告、关注用户详细
+- 消息管理页内置删除与检查服务，支持条件查询、SQL 查询、消息 ID 区间删除、消息检查、按功能独立日志与日志清理
 - User Report 页改回与首页同风格的区块布局
 - 页面切换默认复用已获取数据，减少重复请求
 - User 页面直达路由补齐，支持中文用户名路径
@@ -298,5 +341,5 @@ npm run build
 
 ```powershell
 cd D:\python\board
-uv run python -m py_compile app.py user_report.py juhe.py
+uv run python -m py_compile app.py message_manage.py user_report.py juhe.py
 ```

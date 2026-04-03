@@ -798,6 +798,15 @@ a {
   gap: 22px;
 }
 
+.juhe-panel-grid-centered {
+  align-items: stretch;
+}
+
+.juhe-panel-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 22px;
+}
+
 .juhe-panel {
   background: var(--panel);
   border-color: var(--line);

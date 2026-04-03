@@ -49,6 +49,12 @@ def get_db_config(prefix: str, default_database: str) -> dict[str, str]:
     }
 
 
+MESSAGE_DELETE_LOG_TAIL_LINES = int(get_env("MESSAGE_DELETE_LOG_TAIL_LINES", "120") or "120")
+MESSAGE_DELETE_DOWNLOAD_ROOT = Path(
+    get_env("MESSAGE_DELETE_DOWNLOAD_ROOT", get_env("DOWNLOAD_ROOT", "/root/download"))
+    or "/root/download"
+)
+
 DB_NICEBOT = get_db_config("NICEBOT_DB", "nicebot")
 DB_TIKTOK = get_db_config("TIKTOK_DB", "tiktok_bot")
 DB_JUHE = get_db_config("JUHE_DB", "juhe")

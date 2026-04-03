@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from config import DB_NICEBOT, DB_TIKTOK, FRONTEND_DIST_DIR
 from juhe import juhe_bp, init_city_cache, calculate_trend
+from message_manage import message_delete_bp
 from user_report import user_report_bp, detect_platform
 
 # Avoid Flask's built-in static route claiming paths like `/users`.
@@ -15,6 +16,7 @@ app = Flask(__name__, static_folder=None)
 
 app.register_blueprint(juhe_bp)
 app.register_blueprint(user_report_bp)
+app.register_blueprint(message_delete_bp)
 
 init_city_cache()
 

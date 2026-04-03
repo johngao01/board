@@ -41,4 +41,11 @@ export type JuheShanghaiResponse = {
     sh_vals: number[]
     all_vals: number[]
   }
+  platform_history_7d: {
+    dates: string[]
+    series: Array<{
+      name: string
+      values: number[]
+    }>
+  }
 }

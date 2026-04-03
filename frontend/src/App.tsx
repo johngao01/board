@@ -4,6 +4,7 @@ import { AppShell } from './components/AppShell'
 import { GatePage, isGateUnlocked } from './pages/Gate'
 import { DashboardPage } from './pages/DashboardPage'
 import { JuhePage } from './pages/JuhePage'
+import { MessageDeletePage } from './pages/MessageDeletePage'
 import { TikTokPage } from './pages/TikTokPage'
 import { UserManagePage } from './pages/UserManagePage'
 import { UserReportPage } from './pages/UserReportPage'
@@ -28,6 +29,8 @@ function App() {
           <Route index element={<DashboardPage />} />
           <Route path="/tiktok" element={<TikTokPage />} />
           <Route path="/users" element={<UserManagePage />} />
+          <Route path="/message-manage" element={<MessageDeletePage />} />
+          <Route path="/message-delete" element={<Navigate to="/message-manage" replace />} />
           <Route path="/juhe" element={<JuhePage />} />
           <Route path="/user/:identity" element={<UserReportPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

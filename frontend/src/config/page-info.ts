@@ -1,4 +1,4 @@
-export type MainPageInfoKey = 'dashboard' | 'tiktok' | 'users' | 'juhe'
+export type MainPageInfoKey = 'dashboard' | 'users' | 'messageDelete' | 'juhe' | 'tiktok'
 
 export type PageInfoConfig = {
   path: string
@@ -37,13 +37,24 @@ export const mainPageInfo: Record<MainPageInfoKey, PageInfoConfig> = {
     title: '关注用户看板和管理',
     description: '集中查看关注用户核心指标、图表报告与详细信息。',
   },
+  messageDelete: {
+    path: '/message-manage',
+    navLabel: '消息管理',
+    navShort: 'D',
+    navHint: '消息管理删除',
+    navVisible: true,
+    navOrder: 3,
+    eyebrow: 'MESSAGE CONTROL AND DELETE',
+    title: '消息管理',
+    description: '在后台安全预览、确认并执行 NiceBot messages 表关联消息管理。',
+  },
   juhe: {
     path: '/juhe',
     navLabel: 'Juhe',
     navShort: 'J',
     navHint: '聚合看板',
     navVisible: true,
-    navOrder: 3,
+    navOrder: 4,
     eyebrow: 'JUHE AGGREGATION DASHBOARD',
     title: 'Juhe 聚合数据',
     description: '统一查看聚合资源质量、来源分布和上海专项趋势。',
