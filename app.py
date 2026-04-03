@@ -2,20 +2,34 @@ from flask import Flask, jsonify, request, send_from_directory
 import pymysql
 import pandas as pd
 import datetime
+import json
+from pathlib import Path
 from config import DB_NICEBOT, DB_TIKTOK, FRONTEND_DIST_DIR
 from juhe import juhe_bp, init_city_cache, calculate_trend
 from user_report import user_report_bp, detect_platform
 
-app = Flask(__name__, static_folder=str(FRONTEND_DIST_DIR), static_url_path="")
+# Avoid Flask's built-in static route claiming paths like `/users`.
+# We serve frontend/dist ourselves via `frontend_routes` so SPA routes can
+# correctly fall back to index.html on refresh.
+app = Flask(__name__, static_folder=None)
 
 app.register_blueprint(juhe_bp)
 app.register_blueprint(user_report_bp)
 
 init_city_cache()
 
+BASE_DIR = Path(__file__).resolve().parent
+USER_UPDATE_LOG_PATH = BASE_DIR / 'logs' / 'niceme_user_updates.jsonl'
+
 
 def serve_spa_entry():
-    return send_from_directory(app.static_folder, 'index.html')
+    return send_from_directory(FRONTEND_DIST_DIR, 'index.html')
+
+
+def append_user_update_log(entry):
+    USER_UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with USER_UPDATE_LOG_PATH.open('a', encoding='utf-8') as log_file:
+        log_file.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
 
 # ==========================================
@@ -280,14 +294,40 @@ def update_niceme_user(user_id):
 
     conn = pymysql.connect(**DB_NICEBOT)
     try:
-        cursor = conn.cursor()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        if original_platform:
+            select_sql = "SELECT * FROM user WHERE USERID = %s AND platform = %s LIMIT 1"
+            cursor.execute(select_sql, (user_id, original_platform))
+        else:
+            select_sql = "SELECT * FROM user WHERE USERID = %s LIMIT 1"
+            cursor.execute(select_sql, (user_id,))
+
+        original_row = cursor.fetchone()
+        if not original_row:
+            return jsonify({"status": "error", "msg": "用户不存在"}), 404
+
+        changed_items = []
+        for key, value in payload.items():
+            before_value = '' if original_row.get(key) is None else str(original_row.get(key))
+            after_value = '' if value is None else str(value)
+            if before_value != after_value:
+                changed_items.append({
+                    "field": key,
+                    "before": before_value,
+                    "after": after_value,
+                })
+
+        if not changed_items:
+            return jsonify({"status": "error", "msg": "用户不存在或数据未发生变化"}), 404
 
         # 动态构建 UPDATE 语句
         set_clauses = []
         values = []
-        for key, value in payload.items():
+        for item in changed_items:
+            key = item["field"]
             set_clauses.append(f"{key} = %s")
-            values.append(value)
+            values.append(item["after"])
 
         if original_platform:
             sql = f"UPDATE user SET {', '.join(set_clauses)} WHERE USERID = %s AND platform = %s"
@@ -303,7 +343,27 @@ def update_niceme_user(user_id):
         if cursor.rowcount == 0:
             return jsonify({"status": "error", "msg": "用户不存在或数据未发生变化"}), 404
 
-        return jsonify({"status": "success"})
+        log_entry = {
+            "timestamp": datetime.datetime.now().isoformat(timespec='seconds'),
+            "user_id": user_id,
+            "platform": original_platform or str(original_row.get('platform') or ''),
+            "changes": changed_items,
+        }
+
+        log_msg = f"将 {user_id} 的 {changed_items[0]['field']} 从 {changed_items[0]['before'] or '-'} 修改为 {changed_items[0]['after'] or '-'} 成功"
+        if len(changed_items) > 1:
+            log_msg = f"将 {user_id} 的 {len(changed_items)} 个字段修改成功"
+
+        try:
+            append_user_update_log(log_entry)
+        except Exception as log_error:
+            app.logger.exception("Failed to write niceme user update log")
+            return jsonify({
+                "status": "success",
+                "msg": f"{log_msg}，但日志写入失败：{log_error}"
+            })
+
+        return jsonify({"status": "success", "msg": log_msg})
     except Exception as e:
         conn.rollback()
         return jsonify({"status": "error", "msg": str(e)}), 500
@@ -364,7 +424,7 @@ def frontend_routes(path):
 
     requested_path = FRONTEND_DIST_DIR / path
     if path and requested_path.exists() and requested_path.is_file():
-        return send_from_directory(app.static_folder, path)
+        return send_from_directory(FRONTEND_DIST_DIR, path)
 
     return serve_spa_entry()
 

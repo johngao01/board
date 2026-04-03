@@ -12,6 +12,7 @@ import type { UserListResponse, UserRecord, UserUpdateResponse } from '../lib/us
 type ActiveCell = {
   rowKey: string
   field: string
+  value: string
 } | null
 
 type SortDirection = 'asc' | 'desc'
@@ -43,6 +44,15 @@ type UserPanelStats = {
   validData: ChartDatum[]
   freshnessData: ChartDatum[]
   latestTrendData: ChartDatum[]
+}
+
+type SaveResultState = {
+  status: 'success' | 'error'
+  message: string
+  userId: string
+  field: string
+  before: string
+  after: string
 }
 
 function toDisplayValue(value: string | number | null | undefined) {
@@ -300,6 +310,7 @@ export function UserManagePage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [saveResult, setSaveResult] = useState<SaveResultState | null>(null)
   const [activeCell, setActiveCell] = useState<ActiveCell>(null)
   const [collapsed, setCollapsed] = useState<Record<UserSectionId, boolean>>(() => {
     try {
@@ -365,6 +376,20 @@ export function UserManagePage() {
       writeSessionCache('user-manage:rows', rows)
     }
   }, [feedback, loading, rows])
+
+  useEffect(() => {
+    if (!saveResult) {
+      return undefined
+    }
+
+    const timer = window.setTimeout(() => {
+      setSaveResult(null)
+    }, 5000)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [saveResult])
 
   const columns = useMemo(() => {
     const ordered = new Set<string>()
@@ -489,20 +514,6 @@ export function UserManagePage() {
     setQuickFilter((current) => (current === nextFilter ? '' : nextFilter))
   }
 
-  function updateDraft(rowKey: string, field: string, value: string) {
-    setDrafts((current) => ({
-      ...current,
-      [rowKey]: {
-        ...(current[rowKey] ?? {}),
-        [field]: value,
-      },
-    }))
-  }
-
-  function resetCellDraft(rowKey: string, field: string, row: UserRecord) {
-    updateDraft(rowKey, field, toDisplayValue(row[field]))
-  }
-
   function toggleSection(section: UserSectionId) {
     setCollapsed((current) => ({
       ...current,
@@ -528,21 +539,21 @@ export function UserManagePage() {
     }
   }
 
-  async function saveRow(row: UserRecord) {
+  async function saveCell(row: UserRecord, field: string, nextValue: string) {
     const rowKey = buildRowKey(row)
-    const draft = drafts[rowKey] ?? {}
-    const changedEntries = columns.filter((field) => toDisplayValue(row[field]) !== (draft[field] ?? ''))
+    const previousValue = toDisplayValue(row[field])
 
-    if (changedEntries.length === 0) {
+    if (previousValue === nextValue) {
       return
     }
 
     setFeedback(null)
 
     try {
-      const payload = Object.fromEntries(changedEntries.map((field) => [field, draft[field] ?? '']))
+      const payload = { [field]: nextValue }
       const originalUserId = toDisplayValue(row.USERID)
       const originalPlatform = toDisplayValue(row.platform)
+      const successMessage = `将 ${originalUserId} 的 ${field} 从 ${previousValue || '-'} 修改为 ${nextValue || '-'} 成功`
 
       const response = await fetch(
         `/api/niceme/users/${encodeURIComponent(originalUserId)}?platform=${encodeURIComponent(originalPlatform)}`,
@@ -573,9 +584,26 @@ export function UserManagePage() {
         )
         return nextDrafts
       })
-      setFeedback(`USERID=${toDisplayValue(nextRow.USERID)} 保存成功`)
+      setSaveResult({
+        status: 'success',
+        message: result.msg || successMessage,
+        userId: originalUserId,
+        field,
+        before: previousValue || '-',
+        after: nextValue || '-',
+      })
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : '保存失败')
+      setSaveResult({
+        status: 'error',
+        message:
+          error instanceof Error
+            ? `将 ${toDisplayValue(row.USERID)} 的 ${field} 从 ${previousValue || '-'} 修改为 ${nextValue || '-'} 失败：${error.message}`
+            : `将 ${toDisplayValue(row.USERID)} 的 ${field} 从 ${previousValue || '-'} 修改为 ${nextValue || '-'} 失败`,
+        userId: toDisplayValue(row.USERID),
+        field,
+        before: previousValue || '-',
+        after: nextValue || '-',
+      })
     }
   }
 
@@ -808,6 +836,30 @@ export function UserManagePage() {
       />
 
       {feedback ? <div className="info-banner">{feedback}</div> : null}
+      {saveResult ? (
+        <div
+          className="save-result-modal-backdrop"
+          role="presentation"
+          onClick={() => setSaveResult(null)}
+        >
+          <section
+            className={`save-result-modal save-result-modal-${saveResult.status}`}
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="save-result-message">
+              将 <span className="save-result-token">{saveResult.userId}</span> 的{' '}
+              <span className="save-result-token">{saveResult.field}</span> 从{' '}
+              <span className="save-result-token save-result-token-before">{saveResult.before}</span> 修改为{' '}
+              <span className="save-result-token save-result-token-after">{saveResult.after}</span>{' '}
+              <span className={`save-result-token save-result-token-${saveResult.status}`}>
+                {saveResult.status === 'success' ? '成功' : '失败'}
+              </span>
+            </p>
+          </section>
+        </div>
+      ) : null}
 
       <section className="dashboard-section">
         <button
@@ -1024,34 +1076,43 @@ export function UserManagePage() {
                       return (
                         <tr key={rowKey}>
                           {columns.map((column) => {
-                            const cellValue = draft[column] ?? ''
                             const isEditing = activeCell?.rowKey === rowKey && activeCell?.field === column
+                            const displayValue = draft[column] ?? ''
+                            const cellValue = isEditing ? activeCell?.value ?? displayValue : displayValue
 
                             return (
                               <td
                                 key={column}
                                 className={`user-manage-table-cell${isEditing ? ' is-editing' : ''}`}
-                                onDoubleClick={() => setActiveCell({ rowKey, field: column })}
+                                onDoubleClick={() =>
+                                  setActiveCell({
+                                    rowKey,
+                                    field: column,
+                                    value: displayValue,
+                                  })
+                                }
                               >
                                 {isEditing ? (
                                   <input
                                     autoFocus
                                     className="user-manage-cell-editor"
                                     value={cellValue}
-                                    onChange={(event) => updateDraft(rowKey, column, event.target.value)}
-                                    onBlur={() => {
-                                      resetCellDraft(rowKey, column, row)
-                                      setActiveCell(null)
-                                    }}
+                                    onChange={(event) =>
+                                      setActiveCell((current) =>
+                                        current && current.rowKey === rowKey && current.field === column
+                                          ? { ...current, value: event.target.value }
+                                          : current,
+                                      )
+                                    }
+                                    onBlur={() => setActiveCell(null)}
                                     onKeyDown={async (event) => {
                                       if (event.key === 'Enter') {
                                         event.preventDefault()
-                                        await saveRow(row)
+                                        await saveCell(row, column, cellValue)
                                         setActiveCell(null)
                                       }
                                       if (event.key === 'Escape') {
                                         event.preventDefault()
-                                        resetCellDraft(rowKey, column, row)
                                         setActiveCell(null)
                                       }
                                     }}
@@ -1062,21 +1123,21 @@ export function UserManagePage() {
                                     href={homepage}
                                     target="_blank"
                                     rel="noreferrer"
-                                    title={cellValue}
+                                    title={displayValue}
                                   >
-                                    {cellValue || '-'}
+                                    {displayValue || '-'}
                                   </a>
                                 ) : column === 'USERNAME' && currentUsername ? (
                                   <Link
                                     className="user-manage-inline-link"
                                     to={`/user/${encodeURIComponent(currentUsername)}`}
-                                    title={cellValue}
+                                    title={displayValue}
                                   >
-                                    {cellValue || '-'}
+                                    {displayValue || '-'}
                                   </Link>
                                 ) : (
-                                  <span className="user-manage-cell-text" title={cellValue}>
-                                    {cellValue || '-'}
+                                  <span className="user-manage-cell-text" title={displayValue}>
+                                    {displayValue || '-'}
                                   </span>
                                 )}
                               </td>

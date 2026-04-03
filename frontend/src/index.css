@@ -386,6 +386,65 @@ a {
   background: rgba(0, 234, 255, 0.08);
 }
 
+.save-result-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.save-result-modal {
+  width: min(800px, calc(100vw - 32px));
+  margin-top: 64px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
+  pointer-events: auto;
+}
+
+.save-result-modal-success {
+  border-color: rgba(22, 242, 163, 0.34);
+}
+
+.save-result-modal-error {
+  border-color: rgba(255, 91, 107, 0.34);
+}
+
+.save-result-message {
+  margin: 0;
+  color: var(--text);
+  font-size: 2rem;
+  line-height: 1.7;
+}
+
+.save-result-token {
+  font-weight: 800;
+  color: #2bc7ff;
+}
+
+.save-result-token-before {
+  color: #ffb44d;
+}
+
+.save-result-token-after {
+  color: #16f2a3;
+}
+
+.save-result-token-success {
+  color: #16f2a3;
+}
+
+.save-result-token-error {
+  color: #ff6e7f;
+}
+
 .error-banner {
   background: rgba(255, 91, 107, 0.12);
   border-color: rgba(255, 91, 107, 0.34);
@@ -1493,5 +1552,9 @@ a {
   .message-row,
   .table-row {
     grid-template-columns: 1fr;
+  }
+
+  .save-result-modal-backdrop {
+    padding: 16px;
   }
 }
