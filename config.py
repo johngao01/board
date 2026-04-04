@@ -9,6 +9,7 @@ ENV_FILE = BASE_DIR / ".env"
 
 
 def load_env_file(path: Path = ENV_FILE) -> None:
+    """从本地 .env 文件加载环境变量，但不覆盖已有系统环境变量。"""
     if not path.exists():
         return
 
@@ -27,6 +28,7 @@ load_env_file()
 
 
 def get_env(key: str, default: str | None = None) -> str | None:
+    """读取环境变量；当值为空时回退到默认值。"""
     value = os.getenv(key)
     if value is None or value == "":
         return default
@@ -34,6 +36,7 @@ def get_env(key: str, default: str | None = None) -> str | None:
 
 
 def get_db_config(prefix: str, default_database: str) -> dict[str, str]:
+    """按统一前缀读取数据库连接配置。"""
     host = get_env(f"{prefix}_HOST", get_env("DB_HOST", "127.0.0.1"))
     user = get_env(f"{prefix}_USER", get_env("DB_USER", "root"))
     password = get_env(f"{prefix}_PASSWORD", get_env("DB_PASSWORD", ""))

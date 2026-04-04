@@ -10,6 +10,7 @@ CITY_CODE_MAP = {}
 
 
 def init_city_cache():
+    """预加载城市代码映射，减少接口请求时的重复查询。"""
     print("正在加载城市代码缓存...")
     t0 = time.time()
     conn = pymysql.connect(**DB_JUHE)
@@ -28,6 +29,7 @@ def init_city_cache():
 
 
 def calculate_trend(curr, prev):
+    """根据当前值和前一日值计算百分比趋势。"""
     if not prev or prev == 0:
         return 0
     return round(((curr - prev) / prev) * 100, 1)
@@ -40,6 +42,7 @@ def calculate_trend(curr, prev):
 
 @juhe_bp.route('/api/juhe/stats')
 def api_juhe_stats():
+    """返回聚合库首页的总体统计、来源分布和城市分布。"""
     # 开始总计时
     t_start = time.time()
     conn = None
@@ -158,6 +161,7 @@ def api_juhe_stats():
 
 @juhe_bp.route('/api/juhe/shanghai')
 def api_juhe_shanghai():
+    """返回上海区域的聚合统计、30 天趋势和近 7 天平台分布。"""
     t_start = time.time()
     conn = None
     try:

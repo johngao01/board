@@ -1,22 +1,13 @@
 import {useEffect, useRef, useState} from 'react'
 import type {CSSProperties, FormEvent, RefObject} from 'react'
 import {useNavigate, useSearchParams} from 'react-router-dom'
-
-const GATE_STORAGE_KEY = 'board-gate-unlocked'
+import { unlockGate } from '../lib/gate'
 
 export function buildTimePassword(date: Date) {
     const day = `${date.getDate()}`.padStart(2, '0')
     const hour = `${date.getHours()}`.padStart(2, '0')
     const minute = `${date.getMinutes()}`.padStart(2, '0')
     return `${day}${hour}${minute}`
-}
-
-export function isGateUnlocked() {
-    return sessionStorage.getItem(GATE_STORAGE_KEY) === '1'
-}
-
-export function unlockGate() {
-    sessionStorage.setItem(GATE_STORAGE_KEY, '1')
 }
 
 interface PupilProps {
