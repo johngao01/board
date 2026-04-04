@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { PageIntro } from '../components/PageIntro'
 import { mainPageInfo } from '../config/page-info'
 import type {
@@ -11,18 +11,42 @@ import type {
   RangeExecutionData,
   RangePreviewData,
   SinglePostExecutionData,
+  SqlPreviewGroup,
   SqlPreviewData,
 } from '../lib/message-delete'
 
 type DeleteTab = 'builder' | 'advanced_sql' | 'id_range' | 'delivery_check'
+type SqlQueryTab = 'builder' | 'advanced_sql'
 type RelationMode = 'AND' | 'OR'
+type RangeSortOrder = 'asc' | 'desc'
+type DeliveryFilter = 'all' | 'non_complete' | 'complete' | 'misordered' | 'missing' | 'duplicate_send' | 'unknown'
 
 type ExecuteModalState = {
   postKey: string
+  queryTab: SqlQueryTab
   deleteTelegram: boolean
   deleteFiles: boolean
   deleteDb: boolean
 } | null
+
+type PreviewNoticeState = {
+  message: string
+  token: number
+} | null
+
+type ExpandedPostState = Record<string, boolean>
+
+type SqlPreviewPayload = {
+  query_mode: 'builder' | 'advanced'
+  relation?: RelationMode
+  conditions?: Array<{
+    field: string
+    operator: string
+    value: string
+    value_to?: string
+  }>
+  where_clause?: string
+}
 
 const DEFAULT_QUERY_FIELDS: QueryFieldConfig[] = [
   { key: 'MESSAGE_ID', label: 'MESSAGE_ID', type: 'number', operators: ['eq', 'ne', 'gte', 'lte', 'between', 'in'] },
@@ -74,7 +98,7 @@ const TAB_LOG_FEATURES: Record<DeleteTab, string> = {
   delivery_check: 'delivery_check',
 }
 
-function createCondition(field = 'USERNAME', operator = 'contains'): QueryCondition {
+function createCondition(field = 'MESSAGE_ID', operator = 'gte'): QueryCondition {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     field,
@@ -117,7 +141,7 @@ async function getJson<T>(path: string): Promise<T> {
   return result.data
 }
 
-export function MessageDeletePage() {
+export function MessageManagePage() {
   const pageInfo = mainPageInfo.messageDelete
   const [activeTab, setActiveTab] = useState<DeleteTab>('builder')
   const [relation, setRelation] = useState<RelationMode>('AND')
@@ -125,13 +149,16 @@ export function MessageDeletePage() {
   const [operatorLabels, setOperatorLabels] = useState<Record<string, string>>(DEFAULT_OPERATOR_LABELS)
   const [conditions, setConditions] = useState<QueryCondition[]>([createCondition()])
   const [whereClause, setWhereClause] = useState('')
-  const [sqlPreview, setSqlPreview] = useState<SqlPreviewData | null>(null)
+  const [builderPreview, setBuilderPreview] = useState<SqlPreviewData | null>(null)
+  const [advancedSqlPreview, setAdvancedSqlPreview] = useState<SqlPreviewData | null>(null)
   const [startId, setStartId] = useState('')
   const [endId, setEndId] = useState('')
   const [rangeCount, setRangeCount] = useState('')
   const [rangePreview, setRangePreview] = useState<RangePreviewData | null>(null)
   const [rangeResult, setRangeResult] = useState<RangeExecutionData | null>(null)
+  const [rangeSortOrder, setRangeSortOrder] = useState<RangeSortOrder>('asc')
   const [deliveryResult, setDeliveryResult] = useState<DeliveryCheckData | null>(null)
+  const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>('non_complete')
   const [deliveryRelation, setDeliveryRelation] = useState<RelationMode>('AND')
   const [deliveryConditions, setDeliveryConditions] = useState<QueryCondition[]>([createCondition()])
   const [logs, setLogs] = useState<string[]>([])
@@ -140,18 +167,157 @@ export function MessageDeletePage() {
   const [loading, setLoading] = useState<'sql-preview' | 'single-execute' | 'range-preview' | 'range-single-execute' | 'delivery-check' | 'logs' | 'meta' | ''>('')
   const [rangeConfirmed, setRangeConfirmed] = useState(false)
   const [executeModal, setExecuteModal] = useState<ExecuteModalState>(null)
-  const [processedPosts, setProcessedPosts] = useState<Record<string, SinglePostExecutionData>>({})
+  const [builderProcessedPosts, setBuilderProcessedPosts] = useState<Record<string, SinglePostExecutionData>>({})
+  const [advancedProcessedPosts, setAdvancedProcessedPosts] = useState<Record<string, SinglePostExecutionData>>({})
   const [processedRangeMessages, setProcessedRangeMessages] = useState<Record<number, 'success' | 'failed'>>({})
+  const [previewNotice, setPreviewNotice] = useState<PreviewNoticeState>(null)
+  const [builderExpandedPosts, setBuilderExpandedPosts] = useState<ExpandedPostState>({})
+  const [advancedExpandedPosts, setAdvancedExpandedPosts] = useState<ExpandedPostState>({})
+  const [builderQuerySignature, setBuilderQuerySignature] = useState<string | null>(null)
+  const [advancedQuerySignature, setAdvancedQuerySignature] = useState<string | null>(null)
+  const [rangeQuerySignature, setRangeQuerySignature] = useState<string | null>(null)
+  const [deliveryQuerySignature, setDeliveryQuerySignature] = useState<string | null>(null)
+  const [builderPreviewPayload, setBuilderPreviewPayload] = useState<SqlPreviewPayload | null>(null)
+  const [advancedPreviewPayload, setAdvancedPreviewPayload] = useState<SqlPreviewPayload | null>(null)
 
-  const sqlSummary = sqlPreview?.summary
-  const rangeSummary = rangePreview
+  const sqlPreview = activeTab === 'builder'
+    ? builderPreview
+    : activeTab === 'advanced_sql'
+      ? advancedSqlPreview
+      : null
+  const processedPosts = activeTab === 'builder'
+    ? builderProcessedPosts
+    : activeTab === 'advanced_sql'
+      ? advancedProcessedPosts
+      : null
+  const expandedPosts = activeTab === 'builder'
+    ? builderExpandedPosts
+    : activeTab === 'advanced_sql'
+      ? advancedExpandedPosts
+      : null
   const fieldMap = useMemo(() => Object.fromEntries(queryFields.map((field) => [field.key, field])), [queryFields])
+  const builderPayload = useMemo<SqlPreviewPayload>(() => ({
+    query_mode: 'builder',
+    relation,
+    conditions: conditions.map((item) => ({
+      field: item.field,
+      operator: item.operator,
+      value: item.value,
+      value_to: item.value_to,
+    })),
+  }), [conditions, relation])
+  const advancedPayload = useMemo<SqlPreviewPayload>(() => ({
+    query_mode: 'advanced',
+    where_clause: whereClause,
+  }), [whereClause])
+  const builderCurrentSignature = useMemo(() => JSON.stringify(builderPayload), [builderPayload])
+  const advancedCurrentSignature = useMemo(() => JSON.stringify(advancedPayload), [advancedPayload])
+  const rangeCurrentSignature = useMemo(() => JSON.stringify({
+    start_id: startId.trim(),
+    end_id: endId.trim(),
+    range_count: rangeCount.trim(),
+  }), [endId, rangeCount, startId])
+  const deliveryCurrentSignature = useMemo(() => JSON.stringify({
+    relation: deliveryRelation,
+    conditions: deliveryConditions.map((item) => ({
+      field: item.field,
+      operator: item.operator,
+      value: item.value,
+      value_to: item.value_to,
+    })),
+  }), [deliveryConditions, deliveryRelation])
+  const builderPreviewVisible = Boolean(builderPreview) && builderQuerySignature === builderCurrentSignature
+  const advancedPreviewVisible = Boolean(advancedSqlPreview) && advancedQuerySignature === advancedCurrentSignature
+  const rangePreviewVisible = Boolean(rangePreview) && rangeQuerySignature === rangeCurrentSignature
+  const deliveryResultVisible = Boolean(deliveryResult) && deliveryQuerySignature === deliveryCurrentSignature
+  const sqlPreviewVisible = activeTab === 'builder' ? builderPreviewVisible : advancedPreviewVisible
+  const sqlSummary = sqlPreviewVisible ? sqlPreview?.summary : null
+  const rangeSummary = rangePreviewVisible ? rangePreview : null
+  const sortedSqlGroups = useMemo(() => {
+    if (!sqlPreview?.groups.length) {
+      return []
+    }
+
+    const getSortKey = (group: SqlPreviewGroup) => (
+      group.message_ids.length ? Math.min(...group.message_ids) : Number.MAX_SAFE_INTEGER
+    )
+
+    return [...sqlPreview.groups].sort((left, right) => {
+      const keyDiff = getSortKey(left) - getSortKey(right)
+      if (keyDiff !== 0) {
+        return keyDiff
+      }
+      return left.post_key.localeCompare(right.post_key)
+    })
+  }, [sqlPreview])
+  const processedSummary = useMemo(() => {
+    if (!processedPosts) {
+      return { posts: 0, messages: 0 }
+    }
+
+    return sortedSqlGroups.reduce(
+      (summary, group) => {
+        if (!processedPosts[group.post_key]) {
+          return summary
+        }
+
+        return {
+          posts: summary.posts + 1,
+          messages: summary.messages + group.message_ids.length,
+        }
+      },
+      { posts: 0, messages: 0 },
+    )
+  }, [processedPosts, sortedSqlGroups])
+  const sortedRangeMessageIds = useMemo(() => {
+    if (!rangePreview) {
+      return []
+    }
+
+    const messageIds = [...rangePreview.message_ids]
+    messageIds.sort((left, right) => (
+      rangeSortOrder === 'asc' ? left - right : right - left
+    ))
+    return messageIds
+  }, [rangePreview, rangeSortOrder])
+  const rangeProcessedSummary = useMemo(() => {
+    if (!rangePreview) {
+      return {
+        targetMessages: 0,
+        processedMessages: 0,
+        unprocessedMessages: 0,
+      }
+    }
+
+    const processedMessages = rangePreview.message_ids.filter((messageId) => processedRangeMessages[messageId]).length
+
+    return {
+      targetMessages: rangePreview.message_count,
+      processedMessages,
+      unprocessedMessages: Math.max(rangePreview.message_count - processedMessages, 0),
+    }
+  }, [processedRangeMessages, rangePreview])
+  const filteredDeliveryResults = useMemo(() => {
+    if (!deliveryResultVisible || !deliveryResult) {
+      return []
+    }
+
+    if (deliveryFilter === 'all') {
+      return deliveryResult.results
+    }
+
+    if (deliveryFilter === 'non_complete') {
+      return deliveryResult.results.filter((item) => item.status !== 'complete')
+    }
+
+    return deliveryResult.results.filter((item) => item.status === deliveryFilter)
+  }, [deliveryFilter, deliveryResult, deliveryResultVisible])
 
   function getEffectiveField(condition: QueryCondition) {
     if (fieldMap[condition.field]) {
       return condition.field
     }
-    return queryFields[0]?.key ?? DEFAULT_QUERY_FIELDS[0].key
+    return queryFields.find((f) => f.key === 'MESSAGE_ID')?.key ?? queryFields[0]?.key ?? DEFAULT_QUERY_FIELDS[0].key
   }
 
   function getEffectiveOperators(fieldKey: string) {
@@ -166,6 +332,100 @@ export function MessageDeletePage() {
       return condition.operator
     }
     return operators[0] ?? 'eq'
+  }
+
+  function getSqlTab(tab: DeleteTab = activeTab): SqlQueryTab {
+    return tab === 'advanced_sql' ? 'advanced_sql' : 'builder'
+  }
+
+  function setSqlPreviewForTab(tab: SqlQueryTab, preview: SqlPreviewData | null) {
+    if (tab === 'advanced_sql') {
+      setAdvancedSqlPreview(preview)
+      return
+    }
+    setBuilderPreview(preview)
+  }
+
+  function clearProcessedPostsForTab(tab: SqlQueryTab) {
+    if (tab === 'advanced_sql') {
+      setAdvancedProcessedPosts({})
+      return
+    }
+    setBuilderProcessedPosts({})
+  }
+
+  function updateProcessedPostsForTab(
+    tab: SqlQueryTab,
+    updater: (current: Record<string, SinglePostExecutionData>) => Record<string, SinglePostExecutionData>,
+  ) {
+    if (tab === 'advanced_sql') {
+      setAdvancedProcessedPosts(updater)
+      return
+    }
+    setBuilderProcessedPosts(updater)
+  }
+
+  function setQuerySignatureForTab(tab: SqlQueryTab, signature: string | null) {
+    if (tab === 'advanced_sql') {
+      setAdvancedQuerySignature(signature)
+      return
+    }
+    setBuilderQuerySignature(signature)
+  }
+
+  function setPreviewPayloadForTab(tab: SqlQueryTab, payload: SqlPreviewPayload | null) {
+    if (tab === 'advanced_sql') {
+      setAdvancedPreviewPayload(payload)
+      return
+    }
+    setBuilderPreviewPayload(payload)
+  }
+
+  function clearExpandedPostsForTab(tab: SqlQueryTab) {
+    if (tab === 'advanced_sql') {
+      setAdvancedExpandedPosts({})
+      return
+    }
+    setBuilderExpandedPosts({})
+  }
+
+  function toggleExpandedPost(tab: SqlQueryTab, postKey: string) {
+    const updater = (current: ExpandedPostState) => ({
+      ...current,
+      [postKey]: !current[postKey],
+    })
+
+    if (tab === 'advanced_sql') {
+      setAdvancedExpandedPosts(updater)
+      return
+    }
+    setBuilderExpandedPosts(updater)
+  }
+
+  function handlePreviewValueDoubleClick(event: ReactMouseEvent<HTMLElement>) {
+    const selection = window.getSelection()
+    if (!selection) {
+      return
+    }
+
+    const range = document.createRange()
+    range.selectNodeContents(event.currentTarget)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+
+  function handlePreviewItemDoubleClick(event: ReactMouseEvent<HTMLElement>) {
+    event.stopPropagation()
+    handlePreviewValueDoubleClick(event)
+  }
+
+  function handleTabChange(nextTab: DeleteTab) {
+    setActiveTab(nextTab)
+    setExecuteModal(null)
+    setFeedback(null)
+    setError(null)
+    setPreviewNotice(null)
+    void refreshLogs(nextTab)
   }
 
   async function refreshLogs(targetTab: DeleteTab = activeTab) {
@@ -190,13 +450,17 @@ export function MessageDeletePage() {
     setLoading('logs')
     setError(null)
     setFeedback(null)
+    setPreviewNotice(null)
     try {
       const feature = TAB_LOG_FEATURES[activeTab]
       const data = await postJson<MessageDeleteLogsResponse['data']>('/api/niceme/message-delete/logs/clear', {
         feature,
       })
       setLogs(data.lines)
-      setFeedback('当前功能日志已清理。')
+      setPreviewNotice({
+        message: '当前功能日志已清理。',
+        token: Date.now(),
+      })
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : '日志清理失败')
     } finally {
@@ -237,23 +501,33 @@ export function MessageDeletePage() {
   }, [])
 
   useEffect(() => {
-    void refreshLogs(activeTab)
-  }, [activeTab])
+    if (!previewNotice) {
+      return undefined
+    }
+
+    const timer = window.setTimeout(() => {
+      setPreviewNotice((current) => (current?.token === previewNotice.token ? null : current))
+    }, 3000)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [previewNotice])
 
   useEffect(() => {
     if (!queryFields.length) {
       return
     }
 
-    const defaultField = queryFields[0]?.key ?? 'USERNAME'
-    const defaultOperator = fieldMap[defaultField]?.operators?.[0] ?? 'eq'
+    const defaultField = 'MESSAGE_ID'
+    const defaultOperator = 'gte'
 
     setConditions((current) =>
       current.map((item) => {
         const nextField = fieldMap[item.field] ? item.field : defaultField
         const nextOperator = fieldMap[nextField]?.operators?.includes(item.operator)
           ? item.operator
-          : (fieldMap[nextField]?.operators?.[0] ?? defaultOperator)
+          : (fieldMap[nextField]?.operators?.includes(defaultOperator) ? defaultOperator : (fieldMap[nextField]?.operators?.[0] ?? 'eq'))
         return {
           ...item,
           field: nextField,
@@ -267,7 +541,7 @@ export function MessageDeletePage() {
         const nextField = fieldMap[item.field] ? item.field : defaultField
         const nextOperator = fieldMap[nextField]?.operators?.includes(item.operator)
           ? item.operator
-          : (fieldMap[nextField]?.operators?.[0] ?? defaultOperator)
+          : (fieldMap[nextField]?.operators?.includes(defaultOperator) ? defaultOperator : (fieldMap[nextField]?.operators?.[0] ?? 'eq'))
         return {
           ...item,
           field: nextField,
@@ -306,18 +580,26 @@ export function MessageDeletePage() {
   function resetBuilderConditions() {
     setRelation('AND')
     setConditions([createCondition()])
-    setSqlPreview(null)
-    setProcessedPosts({})
+    setBuilderPreview(null)
+    setBuilderPreviewPayload(null)
+    setBuilderProcessedPosts({})
+    setBuilderExpandedPosts({})
+    setBuilderQuerySignature(null)
     setFeedback(null)
     setError(null)
+    setPreviewNotice(null)
   }
 
   function resetAdvancedSql() {
     setWhereClause('')
-    setSqlPreview(null)
-    setProcessedPosts({})
+    setAdvancedSqlPreview(null)
+    setAdvancedPreviewPayload(null)
+    setAdvancedProcessedPosts({})
+    setAdvancedExpandedPosts({})
+    setAdvancedQuerySignature(null)
     setFeedback(null)
     setError(null)
+    setPreviewNotice(null)
   }
 
   function updateDeliveryCondition(id: string, patch: Partial<QueryCondition>) {
@@ -350,40 +632,41 @@ export function MessageDeletePage() {
     setDeliveryRelation('AND')
     setDeliveryConditions([createCondition()])
     setDeliveryResult(null)
+    setDeliveryFilter('non_complete')
+    setDeliveryQuerySignature(null)
     setFeedback(null)
     setError(null)
   }
 
-  function buildSqlPayload() {
-    return activeTab === 'advanced_sql'
-      ? {
-          query_mode: 'advanced',
-          where_clause: whereClause,
-        }
-      : {
-          query_mode: 'builder',
-          relation,
-          conditions: conditions.map((item) => ({
-            field: item.field,
-            operator: item.operator,
-            value: item.value,
-            value_to: item.value_to,
-          })),
-        }
+  function buildSqlPayload(tab: SqlQueryTab = getSqlTab()) {
+    return tab === 'advanced_sql' ? advancedPayload : builderPayload
   }
 
   async function previewSqlDelete() {
+    const sqlTab = getSqlTab()
+    const payload = buildSqlPayload(sqlTab)
+    const querySignature = sqlTab === 'advanced_sql' ? advancedCurrentSignature : builderCurrentSignature
+
     setLoading('sql-preview')
     setError(null)
     setFeedback(null)
-    setProcessedPosts({})
+    setPreviewNotice(null)
+    clearProcessedPostsForTab(sqlTab)
+    clearExpandedPostsForTab(sqlTab)
     try {
-      const data = await postJson<SqlPreviewData>('/api/niceme/message-delete/sql/preview', buildSqlPayload())
-      setSqlPreview(data)
-      setFeedback(`已生成删除预览，共 ${data.summary.target_posts} 个 post、${data.summary.target_messages} 条消息。`)
+      const data = await postJson<SqlPreviewData>('/api/niceme/message-delete/sql/preview', payload)
+      setSqlPreviewForTab(sqlTab, data)
+      setPreviewPayloadForTab(sqlTab, payload)
+      setQuerySignatureForTab(sqlTab, querySignature)
+      setPreviewNotice({
+        message: `已生成删除预览，共 ${data.summary.target_posts} 个 post、${data.summary.target_messages} 条消息。`,
+        token: Date.now(),
+      })
       await refreshLogs()
     } catch (requestError) {
-      setSqlPreview(null)
+      setSqlPreviewForTab(sqlTab, null)
+      setPreviewPayloadForTab(sqlTab, null)
+      setQuerySignatureForTab(sqlTab, null)
       setError(requestError instanceof Error ? requestError.message : '预览失败')
     } finally {
       setLoading('')
@@ -399,6 +682,12 @@ export function MessageDeletePage() {
       return
     }
 
+    const executePayload = executeModal.queryTab === 'advanced_sql' ? advancedPreviewPayload : builderPreviewPayload
+    if (!executePayload) {
+      setError('查询条件已变化，请重新生成预览后再执行删除。')
+      return
+    }
+
     const confirmed = window.confirm(`确认处理 post_key=${executeModal.postKey} 吗？`)
     if (!confirmed) {
       return
@@ -409,7 +698,7 @@ export function MessageDeletePage() {
     setFeedback(null)
     try {
       const data = await postJson<SinglePostExecutionData>('/api/niceme/message-delete/sql/execute-single', {
-        ...buildSqlPayload(),
+        ...executePayload,
         post_key: executeModal.postKey,
         execute_options: {
           delete_telegram: executeModal.deleteTelegram,
@@ -418,7 +707,7 @@ export function MessageDeletePage() {
         },
         confirm_execute: true,
       })
-      setProcessedPosts((current) => ({ ...current, [data.post_key]: data }))
+      updateProcessedPostsForTab(executeModal.queryTab, (current) => ({ ...current, [data.post_key]: data }))
       setExecuteModal(null)
       setFeedback(`已处理 ${data.post_key}。`)
       await refreshLogs()
@@ -434,35 +723,63 @@ export function MessageDeletePage() {
     setLoading('range-preview')
     setError(null)
     setFeedback(null)
+    setPreviewNotice(null)
     setRangeResult(null)
     setProcessedRangeMessages({})
     try {
-      const normalizedStartId = Number.parseInt(startId, 10)
-      const normalizedEndId = endId.trim() ? Number.parseInt(endId, 10) : NaN
-      const normalizedCount = rangeCount.trim() ? Number.parseInt(rangeCount, 10) : NaN
+      const trimmedStartId = startId.trim()
+      const trimmedEndId = endId.trim()
+      const trimmedCount = rangeCount.trim()
+      const useLatestMessages = !trimmedStartId && !trimmedEndId && !trimmedCount
 
-      if (Number.isNaN(normalizedStartId)) {
-        throw new Error('开始消息 ID 必须是整数')
-      }
+      let requestPayload: { start_id?: number, end_id?: number } = {}
 
-      let resolvedEndId = normalizedEndId
-      if (Number.isNaN(resolvedEndId)) {
-        if (Number.isNaN(normalizedCount) || normalizedCount <= 0) {
-          throw new Error('结束消息 ID 和想删除的消息数量至少填写一个')
+      if (!useLatestMessages) {
+        const normalizedStartId = Number.parseInt(trimmedStartId, 10)
+        const normalizedEndId = trimmedEndId ? Number.parseInt(trimmedEndId, 10) : NaN
+        const normalizedCount = trimmedCount ? Number.parseInt(trimmedCount, 10) : NaN
+
+        if (Number.isNaN(normalizedStartId)) {
+          throw new Error('开始消息 ID 必须是整数')
         }
-        resolvedEndId = normalizedStartId + normalizedCount - 1
-        setEndId(String(resolvedEndId))
+
+        let resolvedEndId = normalizedEndId
+        if (Number.isNaN(resolvedEndId)) {
+          if (Number.isNaN(normalizedCount) || normalizedCount <= 0) {
+            throw new Error('结束消息 ID 和想删除的消息数量至少填写一个')
+          }
+          resolvedEndId = normalizedStartId + normalizedCount - 1
+        }
+
+        requestPayload = {
+          start_id: normalizedStartId,
+          end_id: resolvedEndId,
+        }
       }
 
-      const data = await postJson<RangePreviewData>('/api/niceme/message-delete/id-range/preview', {
-        start_id: normalizedStartId,
-        end_id: resolvedEndId,
-      })
+      const data = await postJson<RangePreviewData>('/api/niceme/message-delete/id-range/preview', requestPayload)
       setRangePreview(data)
-      setFeedback(`已生成 ID 区间预览，共 ${data.message_count} 条 Telegram 消息。`)
+      setRangeQuerySignature(useLatestMessages
+        ? JSON.stringify({ start_id: '', end_id: '', range_count: '' })
+        : JSON.stringify({
+            start_id: String(data.start_id),
+            end_id: String(data.end_id),
+            range_count: String(data.message_count),
+          }))
+      setRangeSortOrder('asc')
+      setStartId(String(data.start_id))
+      setEndId(String(data.end_id))
+      setRangeCount(String(data.message_count))
+      setPreviewNotice({
+        message: useLatestMessages
+          ? `未填写区间，已自动加载最新 ${data.message_count} 条 Telegram 消息。`
+          : `已生成 ID 区间预览，共 ${data.message_count} 条 Telegram 消息。`,
+        token: Date.now(),
+      })
       await refreshLogs()
     } catch (requestError) {
       setRangePreview(null)
+      setRangeQuerySignature(null)
       setError(requestError instanceof Error ? requestError.message : 'ID 区间预览失败')
     } finally {
       setLoading('')
@@ -516,6 +833,7 @@ export function MessageDeletePage() {
     setLoading('delivery-check')
     setError(null)
     setFeedback(null)
+    setPreviewNotice(null)
     try {
       const data = await postJson<DeliveryCheckData>('/api/niceme/message-delete/delivery-check', {
         relation: deliveryRelation,
@@ -530,10 +848,16 @@ export function MessageDeletePage() {
           })),
       })
       setDeliveryResult(data)
-      setFeedback(`消息检查完成，共扫描 ${data.summary.total_posts} 个 post。`)
+      setDeliveryFilter('non_complete')
+      setDeliveryQuerySignature(deliveryCurrentSignature)
+      setPreviewNotice({
+        message: `消息检查完成，共扫描 ${data.summary.total_posts} 个 post。`,
+        token: Date.now(),
+      })
       await refreshLogs()
     } catch (requestError) {
       setDeliveryResult(null)
+      setDeliveryQuerySignature(null)
       setError(requestError instanceof Error ? requestError.message : '消息检查失败')
     } finally {
       setLoading('')
@@ -546,15 +870,17 @@ export function MessageDeletePage() {
         eyebrow={pageInfo.eyebrow}
         title={<h3>{pageInfo.title}</h3>}
         description={pageInfo.description}
-        actions={
-          <button type="button" className="header-button" onClick={() => void refreshLogs(activeTab)}>
-            刷新日志
-          </button>
-        }
       />
 
       {feedback ? <div className="info-banner">{feedback}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
+      {previewNotice ? (
+        <div className="save-result-modal-backdrop" aria-live="polite">
+          <section className="save-result-modal save-result-modal-success delete-feedback-toast" role="status">
+            <p className="delete-feedback-toast-message">{previewNotice.message}</p>
+          </section>
+        </div>
+      ) : null}
 
       {executeModal ? (
         <div className="save-result-modal-backdrop" role="presentation" onClick={() => setExecuteModal(null)}>
@@ -610,31 +936,31 @@ export function MessageDeletePage() {
           <div className="delete-tab-strip">
             <button
               type="button"
+              className={`delete-tab-button${activeTab === 'delivery_check' ? ' is-active' : ''}`}
+              onClick={() => handleTabChange('delivery_check')}
+            >
+              消息检查
+            </button>
+            <button
+              type="button"
               className={`delete-tab-button${activeTab === 'builder' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('builder')}
+              onClick={() => handleTabChange('builder')}
             >
               条件查询
             </button>
             <button
               type="button"
               className={`delete-tab-button${activeTab === 'advanced_sql' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('advanced_sql')}
+              onClick={() => handleTabChange('advanced_sql')}
             >
               SQL 查询
             </button>
             <button
               type="button"
               className={`delete-tab-button${activeTab === 'id_range' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('id_range')}
+              onClick={() => handleTabChange('id_range')}
             >
               消息 ID 区间
-            </button>
-            <button
-              type="button"
-              className={`delete-tab-button${activeTab === 'delivery_check' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('delivery_check')}
-            >
-              消息检查
             </button>
           </div>
 
@@ -768,9 +1094,9 @@ export function MessageDeletePage() {
                 </div>
                 {sqlSummary ? (
                   <>
-                    <div className="delete-summary-grid">
+                    <div className="delete-summary-grid delete-summary-grid-delivery">
                       <article className="dashboard-card delete-summary-card">
-                        <p className="dashboard-card-title">目标 Post</p>
+                        <p className="dashboard-card-title">POST</p>
                         <strong className="dashboard-card-value">{sqlSummary.target_posts}</strong>
                       </article>
                       <article className="dashboard-card delete-summary-card">
@@ -778,61 +1104,104 @@ export function MessageDeletePage() {
                         <strong className="dashboard-card-value">{sqlSummary.target_messages}</strong>
                       </article>
                       <article className="dashboard-card delete-summary-card">
-                        <p className="dashboard-card-title">查询窗口</p>
-                        <strong className="delete-summary-text">最近 {sqlSummary.delete_window_hours + sqlSummary.db_utc_offset_hours} 小时</strong>
+                        <p className="dashboard-card-title">已处理消息</p>
+                        <strong className="dashboard-card-value">{processedSummary.messages}</strong>
+                      </article>
+                      <article className="dashboard-card delete-summary-card">
+                        <p className="dashboard-card-title">已处理 POST</p>
+                        <strong className="dashboard-card-value">{processedSummary.posts}</strong>
                       </article>
                     </div>
 
                     <div className="delete-preview-list">
-                      {sqlPreview?.groups.map((group) => {
-                        const processed = processedPosts[group.post_key]
+                      {sortedSqlGroups.map((group, index) => {
+                        const processed = processedPosts?.[group.post_key]
+                        const expanded = Boolean(expandedPosts?.[group.post_key])
                         return (
-                          <article key={`${group.post_key}-${group.current_post}`} className={`delete-preview-item${processed ? ' is-processed' : ''}`}>
+                          <article key={`${group.post_key}-${index}`} className={`delete-preview-item${processed ? ' is-processed' : ''}`}>
                             <div className="delete-preview-head">
-                              <strong>
-                                {group.current_post}/{group.total_post}
-                              </strong>
                               <span>{group.username || '未知用户'}</span>
+                              <button
+                                type="button"
+                                className={`delete-preview-corner${expanded ? ' is-expanded' : ''}`}
+                                onClick={() => toggleExpandedPost(getSqlTab(), group.post_key)}
+                                title={expanded ? '点击收起详情' : '点击展开详情'}
+                                aria-label={expanded ? `收起 ${group.post_key} 详情` : `展开 ${group.post_key} 详情`}
+                              >
+                                {index + 1}
+                              </button>
                             </div>
-                            <p><span>IDSTR</span>{group.idstr || '-'}</p>
-                            <p><span>USERID</span>{group.userid || '-'}</p>
-                            <p>
-                              <span>URL</span>
-                              {group.url ? (
-                                <a href={group.url} target="_blank" rel="noreferrer">{group.url}</a>
-                              ) : '-'}
-                            </p>
-                            <p><span>MESSAGE_IDS</span>{group.message_ids.join(', ') || '-'}</p>
-                            <div className="delete-file-list">
-                              <span>FILES</span>
-                              {group.file_candidates.length ? (
-                                group.file_candidates.map((item, index) => (
-                                  <div key={`${item.name}-${index}`} className={`delete-file-item delete-file-item-${item.status}`}>
-                                    {item.status === 'found' ? item.path : item.name}
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="delete-file-item">-</div>
-                              )}
+                            <div className="delete-preview-field">
+                              <span className="delete-preview-label">IDSTR</span>
+                              <div className="delete-preview-value">{group.idstr || '-'}</div>
                             </div>
-                            <div className="delete-preview-actions">
-                              {processed ? (
+                            <div className="delete-preview-field">
+                              <span className="delete-preview-label">USERID</span>
+                              <div className="delete-preview-value">{group.userid || '-'}</div>
+                            </div>
+                            <div className="delete-preview-field">
+                              <span className="delete-preview-label">URL</span>
+                              <div className="delete-preview-value">
+                                {group.url ? (
+                                  <a className="delete-preview-link" href={group.url} target="_blank" rel="noreferrer">{group.url}</a>
+                                ) : '-'}
+                              </div>
+                            </div>
+                            <div className="delete-preview-field">
+                              <span className="delete-preview-label">MESSAGE_IDS</span>
+                              <div className="delete-preview-value">{group.message_ids.join(', ') || '-'}</div>
+                            </div>
+                            {processed ? (
+                              <div className="delete-preview-actions delete-preview-actions-between">
                                 <span className="delete-processed-tag">已处理</span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="delete-danger-button"
-                                  onClick={() => setExecuteModal({
-                                    postKey: group.post_key,
-                                    deleteTelegram: true,
-                                    deleteFiles: true,
-                                    deleteDb: false,
-                                  })}
-                                >
-                                  确认删除
-                                </button>
-                              )}
-                            </div>
+                              </div>
+                            ) : null}
+                            {expanded ? (
+                              <>
+                                <div className="delete-preview-field">
+                                  <span className="delete-preview-label">FILES</span>
+                                  {group.file_candidates.length ? (
+                                    <div className="delete-preview-value delete-preview-inline-list delete-file-inline-list">
+                                      {group.file_candidates.map((item, itemIndex) => {
+                                        const fileContent = item.status === 'found' ? item.path : item.name
+                                        const isLastItem = itemIndex === group.file_candidates.length - 1
+                                        return (
+                                          <span key={`${group.post_key}-${itemIndex}-${fileContent}`}>
+                                            <span
+                                              className={`delete-file-item delete-file-item-${item.status}`}
+                                              onDoubleClick={handlePreviewItemDoubleClick}
+                                              title="双击选中后可直接复制"
+                                            >
+                                              {fileContent}
+                                            </span>
+                                            {isLastItem ? null : <span className="delete-inline-separator">, </span>}
+                                          </span>
+                                        )
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="delete-preview-value">-</div>
+                                  )}
+                                </div>
+                                {!processed ? (
+                                  <div className="delete-preview-actions">
+                                    <button
+                                      type="button"
+                                      className="delete-danger-button"
+                                      onClick={() => setExecuteModal({
+                                        postKey: group.post_key,
+                                        queryTab: getSqlTab(),
+                                        deleteTelegram: true,
+                                        deleteFiles: true,
+                                        deleteDb: false,
+                                      })}
+                                    >
+                                      确认删除
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </>
+                            ) : null}
                           </article>
                         )
                       })}
@@ -874,10 +1243,19 @@ export function MessageDeletePage() {
               <section className="panel delete-preview-panel">
                 <div className="panel-head">
                   <h4>区间预览</h4>
-                  <label className="delete-check delete-check-danger">
-                    <input type="checkbox" checked={rangeConfirmed} onChange={(event) => setRangeConfirmed(event.target.checked)} />
-                    <span>开启后点击删除按钮直接执行，不再二次确认</span>
-                  </label>
+                  <div className="delete-preview-panel-actions">
+                    <button
+                      type="button"
+                      className="header-button"
+                      onClick={() => setRangeSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                    >
+                      {rangeSortOrder === 'asc' ? '排序：从小到大' : '排序：从大到小'}
+                    </button>
+                    <label className="delete-check delete-check-danger">
+                      <input type="checkbox" checked={rangeConfirmed} onChange={(event) => setRangeConfirmed(event.target.checked)} />
+                      <span>开启后点击删除按钮直接执行，不再二次确认</span>
+                    </label>
+                  </div>
                 </div>
                 {rangeSummary ? (
                   <>
@@ -888,12 +1266,20 @@ export function MessageDeletePage() {
                       </article>
                       <article className="dashboard-card delete-summary-card">
                         <p className="dashboard-card-title">目标消息</p>
-                        <strong className="dashboard-card-value">{rangeSummary.message_count}</strong>
+                        <strong className="dashboard-card-value">{rangeProcessedSummary.targetMessages}</strong>
+                      </article>
+                      <article className="dashboard-card delete-summary-card">
+                        <p className="dashboard-card-title">已处理消息</p>
+                        <strong className="dashboard-card-value">{rangeProcessedSummary.processedMessages}</strong>
+                      </article>
+                      <article className="dashboard-card delete-summary-card">
+                        <p className="dashboard-card-title">未处理消息</p>
+                        <strong className="dashboard-card-value">{rangeProcessedSummary.unprocessedMessages}</strong>
                       </article>
                     </div>
 
                     <div className="delete-range-list">
-                      {rangeSummary.message_ids.map((messageId) => {
+                      {sortedRangeMessageIds.map((messageId) => {
                         const state = processedRangeMessages[messageId]
                         return (
                           <article
@@ -1013,43 +1399,66 @@ export function MessageDeletePage() {
                 <div className="panel-head">
                   <h4>检查结果</h4>
                 </div>
-                {deliveryResult ? (
+                {deliveryResultVisible && deliveryResult ? (
                   <>
-                    <div className="delete-summary-grid">
-                      <article className="dashboard-card delete-summary-card">
+                    <div className="delete-summary-grid delete-summary-grid-delivery">
+                      <button
+                        type="button"
+                        className={`dashboard-card delete-summary-card delete-summary-filter-card${deliveryFilter === 'all' ? ' is-active' : ''}`}
+                        onClick={() => setDeliveryFilter('all')}
+                      >
                         <p className="dashboard-card-title">总 Post</p>
                         <strong className="dashboard-card-value">{deliveryResult.summary.total_posts}</strong>
-                      </article>
-                      <article className="dashboard-card delete-summary-card">
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-card delete-summary-card delete-summary-filter-card${deliveryFilter === 'complete' ? ' is-active' : ''}`}
+                        onClick={() => setDeliveryFilter('complete')}
+                      >
                         <p className="dashboard-card-title">完整发送</p>
                         <strong className="dashboard-card-value">{deliveryResult.summary.complete}</strong>
-                      </article>
-                      <article className="dashboard-card delete-summary-card">
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-card delete-summary-card delete-summary-filter-card${deliveryFilter === 'misordered' || deliveryFilter === 'non_complete' ? ' is-active' : ''}`}
+                        onClick={() => setDeliveryFilter('misordered')}
+                      >
                         <p className="dashboard-card-title">错位发送</p>
                         <strong className="dashboard-card-value">{deliveryResult.summary.misordered}</strong>
-                      </article>
-                      <article className="dashboard-card delete-summary-card">
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-card delete-summary-card delete-summary-filter-card${deliveryFilter === 'missing' || deliveryFilter === 'non_complete' ? ' is-active' : ''}`}
+                        onClick={() => setDeliveryFilter('missing')}
+                      >
                         <p className="dashboard-card-title">漏发送</p>
                         <strong className="dashboard-card-value">{deliveryResult.summary.missing}</strong>
-                      </article>
-                      <article className="dashboard-card delete-summary-card">
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-card delete-summary-card delete-summary-filter-card${deliveryFilter === 'duplicate_send' || deliveryFilter === 'non_complete' ? ' is-active' : ''}`}
+                        onClick={() => setDeliveryFilter('duplicate_send')}
+                      >
                         <p className="dashboard-card-title">重复发送</p>
                         <strong className="dashboard-card-value">{deliveryResult.summary.duplicate_send}</strong>
-                      </article>
-                      <article className="dashboard-card delete-summary-card">
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-card delete-summary-card delete-summary-filter-card${deliveryFilter === 'unknown' || deliveryFilter === 'non_complete' ? ' is-active' : ''}`}
+                        onClick={() => setDeliveryFilter('unknown')}
+                      >
                         <p className="dashboard-card-title">未知</p>
                         <strong className="dashboard-card-value">{deliveryResult.summary.unknown}</strong>
-                      </article>
+                      </button>
                     </div>
                     <div className="delete-preview-list">
-                      {deliveryResult.results.length ? (
-                        deliveryResult.results.map((item) => (
+                      {filteredDeliveryResults.length ? (
+                        filteredDeliveryResults.map((item) => (
                           <article key={item.post_key} className={`delete-preview-item delivery-status-${item.status}`}>
                             <div className="delete-preview-head">
                               <strong>{item.status_label}</strong>
                               <span>{item.username || '未知用户'}</span>
                             </div>
-                            <p><span>DETAIL</span>{item.detail}</p>
                             <p><span>IDSTR</span>{item.idstr || '-'}</p>
                             <p><span>MBLOGID</span>{item.mblogid || '-'}</p>
                             <p><span>USERID</span>{item.userid || '-'}</p>
@@ -1084,7 +1493,7 @@ export function MessageDeletePage() {
           </span>
         </button>
         <div className="section-content">
-          {Object.keys(processedPosts).length > 0 || rangeResult ? (
+          {Object.keys(processedPosts ?? {}).length > 0 || rangeResult ? (
             <div className="delete-result-grid">
               {rangeResult
                 ? Object.entries(rangeResult.summary).map(([key, value]) => (
@@ -1093,7 +1502,7 @@ export function MessageDeletePage() {
                       <strong className="dashboard-card-value">{String(value)}</strong>
                     </article>
                   ))
-                : Object.entries(processedPosts).map(([postKey, result]) => (
+                : Object.entries(processedPosts ?? {}).map(([postKey, result]) => (
                     <article key={postKey} className="dashboard-card delete-summary-card">
                       <p className="dashboard-card-title">{postKey}</p>
                       <strong className="delete-summary-text">
@@ -1110,25 +1519,22 @@ export function MessageDeletePage() {
       ) : null}
 
       <section className="dashboard-section">
-        <button type="button" className="section-header theme-table">
+        <div className="section-header theme-table delete-log-section-header">
           <span className="section-title-group">
             <span className="drag-handle">⋮⋮</span>
-            <span className="section-title">删除日志</span>
+            <span className="section-title">执行日志</span>
           </span>
-        </button>
+          <div className="delete-log-header-actions">
+            <button type="button" className="header-button" onClick={() => void refreshLogs(activeTab)} disabled={loading === 'logs'}>
+              {loading === 'logs' ? '刷新中...' : '刷新'}
+            </button>
+            <button type="button" className="reset-button" onClick={() => void clearLogs()} disabled={loading === 'logs'}>
+              {loading === 'logs' ? '处理中...' : '清理日志'}
+            </button>
+          </div>
+        </div>
         <div className="section-content">
           <div className="delete-log-shell">
-            <div className="delete-log-toolbar">
-              <span>最近日志输出</span>
-              <div className="delete-log-toolbar-actions">
-                <button type="button" className="reset-button" onClick={() => void clearLogs()} disabled={loading === 'logs'}>
-                  {loading === 'logs' ? '处理中...' : '清理日志'}
-                </button>
-                <button type="button" className="header-button" onClick={() => void refreshLogs(activeTab)} disabled={loading === 'logs'}>
-                  {loading === 'logs' ? '刷新中...' : '刷新'}
-                </button>
-              </div>
-            </div>
             <pre className="delete-log-output">{logs.length ? logs.join('\n') : '暂无日志输出'}</pre>
           </div>
         </div>

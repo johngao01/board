@@ -43,30 +43,30 @@ MESSAGE_QUERY_FIELDS = [
         "type": "number",
         "operators": ["eq", "ne", "gte", "lte", "between", "in"],
     },
-    {
-        "key": "CAPTION",
-        "label": "CAPTION",
-        "type": "text",
-        "operators": ["eq", "ne", "contains", "starts_with", "ends_with", "is_empty", "is_not_empty"],
-    },
-    {
-        "key": "CHAT_ID",
-        "label": "CHAT_ID",
-        "type": "text",
-        "operators": ["eq", "ne", "in"],
-    },
+    # {
+    #     "key": "CAPTION",
+    #     "label": "CAPTION",
+    #     "type": "text",
+    #     "operators": ["eq", "ne", "contains", "starts_with", "ends_with", "is_empty", "is_not_empty"],
+    # },
+    # {
+    #     "key": "CHAT_ID",
+    #     "label": "CHAT_ID",
+    #     "type": "text",
+    #     "operators": ["eq", "ne", "in"],
+    # },
     {
         "key": "DATE_TIME",
         "label": "DATE_TIME",
         "type": "datetime",
         "operators": ["gte", "lte", "between"],
     },
-    {
-        "key": "MEDIA_GROUP_ID",
-        "label": "MEDIA_GROUP_ID",
-        "type": "text",
-        "operators": ["eq", "ne", "contains", "is_empty", "is_not_empty"],
-    },
+    # {
+    #     "key": "MEDIA_GROUP_ID",
+    #     "label": "MEDIA_GROUP_ID",
+    #     "type": "text",
+    #     "operators": ["eq", "ne", "contains", "is_empty", "is_not_empty"],
+    # },
     {
         "key": "TEXT_RAW",
         "label": "TEXT_RAW",
@@ -103,12 +103,12 @@ MESSAGE_QUERY_FIELDS = [
         "type": "text",
         "operators": ["eq", "ne", "contains", "is_empty", "is_not_empty"],
     },
-    {
-        "key": "MSG_STR",
-        "label": "MSG_STR",
-        "type": "text",
-        "operators": ["contains", "is_empty", "is_not_empty"],
-    },
+    # {
+    #     "key": "MSG_STR",
+    #     "label": "MSG_STR",
+    #     "type": "text",
+    #     "operators": ["contains", "is_empty", "is_not_empty"],
+    # },
 ]
 
 FIELD_CONFIG_MAP = {item["key"]: item for item in MESSAGE_QUERY_FIELDS}
@@ -471,7 +471,7 @@ class MessageDeleteService:
 
         self.log(
             "info",
-            f"执行投递检查: total_posts={len(results)}, where={where_clause or '[recent_56_hours]'}",
+            f"执行消息检查: total_posts={len(results)}, where={where_clause or '[recent_56_hours]'}",
         )
 
         return {
@@ -657,6 +657,26 @@ class MessageDeleteService:
         """把起止 ID 展开成完整的消息 ID 列表。"""
         start_id, end_id = cls.normalize_id_range(raw_range)
         return list(range(start_id, end_id + 1))
+
+    def fetch_latest_range_message_ids(self, limit: int = 50) -> list[int]:
+        """读取固定 chat_id 下最新的一批消息 ID，并按升序返回。"""
+        normalized_limit = max(int(limit), 1)
+        sql = """
+            SELECT MESSAGE_ID
+            FROM messages
+            WHERE CHAT_ID = %s
+            ORDER BY MESSAGE_ID DESC
+            LIMIT %s
+        """
+        with self.create_db_conn() as conn, conn.cursor() as cursor:
+            cursor.execute(sql, (str(self.developer_chat_id), normalized_limit))
+            rows = cursor.fetchall()
+
+        message_ids = [int(row[0]) for row in rows if row and row[0] is not None]
+        if not message_ids:
+            raise ValueError(f"未找到 chat_id={self.developer_chat_id} 的消息记录")
+        message_ids.sort()
+        return message_ids
 
     @staticmethod
     def group_to_preview_dict(group: PostGroup, index: int, total_posts: int) -> dict[str, Any]:
@@ -977,14 +997,24 @@ class MessageDeleteService:
             per_post=per_post,
         )
 
-    def preview_id_range(self, start_id: int, end_id: int) -> dict[str, Any]:
+    def preview_id_range(self, start_id: int | None, end_id: int | None) -> dict[str, Any]:
         """生成消息 ID 区间模式的预览结果。"""
-        message_ids = self.build_range_message_ids((start_id, end_id))
-        self.log(
-            "info",
-            f"生成消息 ID 范围删除预览: chat_id={self.developer_chat_id}, "
-            f"message_id_start={message_ids[0]}, message_id_end={message_ids[-1]}, count={len(message_ids)}",
-        )
+        if start_id is None and end_id is None:
+            message_ids = self.fetch_latest_range_message_ids(limit=50)
+            self.log(
+                "info",
+                f"生成最新消息删除预览: chat_id={self.developer_chat_id}, "
+                f"message_id_start={message_ids[0]}, message_id_end={message_ids[-1]}, count={len(message_ids)}",
+            )
+        else:
+            if start_id is None or end_id is None:
+                raise ValueError("start_id 和 end_id 必须同时填写，或全部留空")
+            message_ids = self.build_range_message_ids((start_id, end_id))
+            self.log(
+                "info",
+                f"生成消息 ID 范围删除预览: chat_id={self.developer_chat_id}, "
+                f"message_id_start={message_ids[0]}, message_id_end={message_ids[-1]}, count={len(message_ids)}",
+            )
         return {
             "mode": "id_range",
             "chat_id": self.developer_chat_id,
@@ -1170,11 +1200,17 @@ def _parse_sql_payload(payload: dict[str, Any]) -> tuple[str, list[str], dict[st
     }, mode
 
 
-def _parse_range_payload(payload: dict[str, Any]) -> tuple[int, int]:
-    """解析消息 ID 区间模式的开始和结束 ID。"""
+def _parse_range_payload(payload: dict[str, Any]) -> tuple[int | None, int | None]:
+    """解析消息 ID 区间模式的开始和结束 ID；允许两者都为空。"""
+    raw_start_id = payload.get("start_id")
+    raw_end_id = payload.get("end_id")
+
+    if raw_start_id in (None, "") and raw_end_id in (None, ""):
+        return None, None
+
     try:
-        start_id = int(payload.get("start_id"))
-        end_id = int(payload.get("end_id"))
+        start_id = int(raw_start_id)
+        end_id = int(raw_end_id)
     except (TypeError, ValueError) as exc:
         raise ValueError("start_id 和 end_id 必须是整数") from exc
     return start_id, end_id
