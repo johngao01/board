@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,13 +24,11 @@ LOG_FEATURES = {
     "builder": "condition_query",
     "advanced_sql": "sql_query",
     "id_range": "id_range",
-    "delivery_check": "message_check",
 }
 LOG_FILENAMES = {
     "condition_query": "message_manage_condition_query.log",
     "sql_query": "message_manage_sql_query.log",
     "id_range": "message_manage_id_range.log",
-    "message_check": "message_manage_message_check.log",
 }
 
 message_delete_bp = Blueprint("message_delete", __name__)
@@ -353,44 +350,6 @@ class MessageDeleteService:
         """
         return sql, (date_time_start, *params)
 
-    def fetch_delivery_rows(self, where_clause: str = "", params: Sequence[Any] | None = None) -> list[MessageRow]:
-        """按投递检查条件读取 messages 表中的消息记录。"""
-        normalized_where = (where_clause or "").strip()
-        normalized_params = list(params or [])
-
-        sql = """
-            SELECT
-                MESSAGE_ID,
-                COALESCE(CAPTION, ''),
-                COALESCE(CHAT_ID, ''),
-                COALESCE(DATE_TIME, ''),
-                COALESCE(MEDIA_GROUP_ID, ''),
-                COALESCE(TEXT_RAW, ''),
-                COALESCE(URL, ''),
-                COALESCE(USERID, ''),
-                COALESCE(USERNAME, ''),
-                COALESCE(IDSTR, ''),
-                COALESCE(MBLOGID, ''),
-                COALESCE(MSG_STR, '')
-            FROM messages
-            WHERE 1=1
-        """
-        query_params: list[Any] = []
-        if normalized_where:
-            sql += f" AND ({normalized_where})"
-            query_params.extend(normalized_params)
-        else:
-            default_start = (datetime.now() - timedelta(hours=56)).strftime("%Y-%m-%d %H:%M:%S")
-            sql += " AND DATE_TIME >= %s"
-            query_params.append(default_start)
-
-        sql += """
-            ORDER BY
-                COALESCE(DATE_TIME, ''),
-                MESSAGE_ID
-        """
-        return self.fetch_rows_by_query(sql, tuple(query_params))
-
     @staticmethod
     def build_delivery_post_key(row: MessageRow) -> str:
         """按参考脚本规则生成 post 聚合键。"""
@@ -456,35 +415,6 @@ class MessageDeleteService:
             message_ids=[row.message_id for row in ordered_rows],
         )
 
-    def check_post_delivery(self, where_clause: str = "", params: Sequence[Any] | None = None) -> dict[str, Any]:
-        """执行 post 投递检查，并返回汇总和筛选后的结果列表。"""
-        rows = self.fetch_delivery_rows(where_clause, params)
-        grouped: dict[str, list[MessageRow]] = defaultdict(list)
-        for row in rows:
-            grouped[self.build_delivery_post_key(row)].append(row)
-
-        results = [
-            self.classify_delivery_post(group_rows)
-            for _, group_rows in grouped.items()
-        ]
-        counts = Counter(result.status for result in results)
-
-        self.log(
-            "info",
-            f"执行消息检查: total_posts={len(results)}, where={where_clause or '[recent_56_hours]'}",
-        )
-
-        return {
-            "summary": {
-                "total_posts": len(results),
-                "complete": counts.get("complete", 0),
-                "misordered": counts.get("misordered", 0),
-                "missing": counts.get("missing", 0),
-                "duplicate_send": counts.get("duplicate_send", 0),
-                "unknown": counts.get("unknown", 0),
-            },
-            "results": [result.to_dict() for result in results],
-        }
 
     def validate_advanced_where_clause(self, where_clause: str) -> str:
         """校验 SQL 查询删除模式输入的 WHERE 条件片段。"""
@@ -492,6 +422,27 @@ class MessageDeleteService:
         if not normalized:
             raise ValueError("WHERE 条件不能为空")
         return normalized
+
+    @staticmethod
+    def render_where_for_log(where_clause: str, query_params: Sequence[Any]) -> str:
+        """把最终 where 条件和参数拼成便于排查的日志字符串。"""
+        def to_sql_literal(value: Any) -> str:
+            if value is None:
+                return "NULL"
+            if isinstance(value, bool):
+                return "1" if value else "0"
+            if isinstance(value, (int, float)):
+                return str(value)
+            text = str(value).replace("\\", "\\\\").replace("'", "\\'")
+            return f"'{text}'"
+
+        if not query_params:
+            return where_clause
+
+        rendered = f"DATE_TIME >= %s AND ({where_clause})"
+        for param in query_params:
+            rendered = rendered.replace("%s", to_sql_literal(param), 1)
+        return rendered
 
     def log(self, level: str, message: str) -> None:
         """同时写 loguru 和本地日志文件，便于页面查看操作历史。"""
@@ -678,10 +629,10 @@ class MessageDeleteService:
         message_ids.sort()
         return message_ids
 
-    @staticmethod
-    def group_to_preview_dict(group: PostGroup, index: int, total_posts: int) -> dict[str, Any]:
+    def group_to_preview_dict(self, group: PostGroup, index: int, total_posts: int) -> dict[str, Any]:
         """把一个 post 分组转换成前端预览卡片结构。"""
         sample = group.sample
+        delivery_check = self.classify_delivery_post(group.rows)
         file_candidates: list[dict[str, Any]] = []
         for name, paths in group.matched_files.items():
             if paths:
@@ -707,6 +658,13 @@ class MessageDeleteService:
             "url": sample.url,
             "mblogid": sample.mblogid,
             "message_ids": group.message_ids,
+            "total_messages": delivery_check.total_messages,
+            "media_count": delivery_check.media_count,
+            "text_count": delivery_check.text_count,
+            "status": delivery_check.status,
+            "status_label": DELIVERY_STATUS_LABELS.get(delivery_check.status, delivery_check.status),
+            "detail": delivery_check.detail,
+            "ordered_types": delivery_check.ordered_types,
             "file_candidates": file_candidates,
         }
 
@@ -718,7 +676,8 @@ class MessageDeleteService:
         skip_files: bool = False,
     ) -> dict[str, Any]:
         """生成 SQL 条件删除模式的预览结果，但不执行真实删除。"""
-        rows = self.fetch_rows(where_clause, params or [])
+        query_sql, query_params = self.build_query(where_clause, params or [])
+        rows = self.fetch_rows_by_query(query_sql, query_params)
         total_posts = self.count_total_posts(rows)
         groups = [
             self.group_to_preview_dict(group, index, total_posts)
@@ -726,7 +685,7 @@ class MessageDeleteService:
         ]
         self.log(
             "info",
-            f"生成消息删除预览: messages={len(rows)}, posts={total_posts}, skip_files={skip_files}, where={where_clause}",
+            f"生成消息删除预览: messages={len(rows)}, posts={total_posts}, skip_files={skip_files}, where={self.render_where_for_log(where_clause, query_params)}",
         )
         return {
             "mode": "sql",
@@ -749,7 +708,8 @@ class MessageDeleteService:
     ) -> dict[str, Any]:
         """生成 SQL 查询删除模式的预览结果，但只允许输入 WHERE 条件。"""
         normalized_where = self.validate_advanced_where_clause(where_clause)
-        rows = self.fetch_rows_by_advanced_sql(normalized_where)
+        query_sql, query_params = self.build_query(normalized_where, [])
+        rows = self.fetch_rows_by_query(query_sql, query_params)
         total_posts = self.count_total_posts(rows)
         groups = [
             self.group_to_preview_dict(group, index, total_posts)
@@ -757,7 +717,7 @@ class MessageDeleteService:
         ]
         self.log(
             "info",
-            f"生成 SQL 查询删除预览: messages={len(rows)}, posts={total_posts}, skip_files={skip_files}, where={normalized_where}",
+            f"生成 SQL 查询删除预览: messages={len(rows)}, posts={total_posts}, skip_files={skip_files}, where={self.render_where_for_log(normalized_where, query_params)}",
         )
         return {
             "mode": "sql",
@@ -867,7 +827,8 @@ class MessageDeleteService:
         skip_files: bool = False,
     ) -> DeleteExecutionResult:
         """执行 SQL 条件删除模式，并返回完整统计结果。"""
-        rows = self.fetch_rows(where_clause, params or [])
+        query_sql, query_params = self.build_query(where_clause, params or [])
+        rows = self.fetch_rows_by_query(query_sql, query_params)
         total_posts = self.count_total_posts(rows)
         preview_groups = [
             self.group_to_preview_dict(group, index, total_posts)
@@ -884,7 +845,8 @@ class MessageDeleteService:
         self.log(
             "info",
             f"执行消息删除: messages={len(rows)}, posts={total_posts}, "
-            f"skip_telegram={skip_telegram}, skip_files={skip_files}, delete_db={delete_db}, where={where_clause}",
+            f"skip_telegram={skip_telegram}, skip_files={skip_files}, delete_db={delete_db}, "
+            f"where={self.render_where_for_log(where_clause, query_params)}",
         )
 
         for index, group in enumerate(self.iter_post_groups(rows, skip_files=skip_files), start=1):
@@ -937,7 +899,8 @@ class MessageDeleteService:
     ) -> DeleteExecutionResult:
         """执行 SQL 查询删除模式，并返回完整统计结果。"""
         normalized_where = self.validate_advanced_where_clause(where_clause)
-        rows = self.fetch_rows_by_advanced_sql(normalized_where)
+        query_sql, query_params = self.build_query(normalized_where, [])
+        rows = self.fetch_rows_by_query(query_sql, query_params)
         total_posts = self.count_total_posts(rows)
         preview_groups = [
             self.group_to_preview_dict(group, index, total_posts)
@@ -954,7 +917,8 @@ class MessageDeleteService:
         self.log(
             "info",
             f"执行 SQL 查询删除: messages={len(rows)}, posts={total_posts}, "
-            f"skip_telegram={skip_telegram}, skip_files={skip_files}, delete_db={delete_db}, where={normalized_where}",
+            f"skip_telegram={skip_telegram}, skip_files={skip_files}, delete_db={delete_db}, "
+            f"where={self.render_where_for_log(normalized_where, query_params)}",
         )
 
         for index, group in enumerate(self.iter_post_groups(rows, skip_files=skip_files), start=1):
@@ -1161,14 +1125,6 @@ def _build_structured_where_clause(payload: dict[str, Any]) -> tuple[str, list[A
     return f" {relation} ".join(sql_parts), params, descriptions
 
 
-def _build_optional_structured_where_clause(payload: dict[str, Any]) -> tuple[str, list[Any], list[str]]:
-    """把前端条件构造器提交的多条条件拼成 WHERE 子句；允许空条件。"""
-    conditions = payload.get("conditions") or []
-    if not conditions:
-        return "", [], []
-    return _build_structured_where_clause(payload)
-
-
 def _json_error(message: str, status_code: int = 400):
     """统一返回错误 JSON，减少各接口重复样板代码。"""
     return jsonify({"status": "error", "msg": message}), status_code
@@ -1214,15 +1170,6 @@ def _parse_range_payload(payload: dict[str, Any]) -> tuple[int | None, int | Non
     except (TypeError, ValueError) as exc:
         raise ValueError("start_id 和 end_id 必须是整数") from exc
     return start_id, end_id
-
-
-def _parse_delivery_check_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """解析投递检查接口请求参数。"""
-    where_clause, params, _descriptions = _build_optional_structured_where_clause(payload)
-    return {
-        "where_clause": where_clause,
-        "params": params,
-    }
 
 
 def _parse_single_post_execute_payload(payload: dict[str, Any]) -> tuple[str, list[str], str, dict[str, bool], str]:
@@ -1419,19 +1366,3 @@ def message_delete_range_execute():
         return _json_error(str(exc), 500)
 
 
-@message_delete_bp.post("/api/niceme/message-delete/delivery-check")
-def message_delete_delivery_check():
-    """执行 messages 表投递检查，返回汇总和结果列表。"""
-    payload = _get_payload()
-    try:
-        filters = _parse_delivery_check_payload(payload)
-        service = build_delete_service(log_feature="message_check")
-        result = service.check_post_delivery(
-            where_clause=filters["where_clause"],
-            params=filters["params"],
-        )
-        return jsonify({"status": "success", "data": result})
-    except ValueError as exc:
-        return _json_error(str(exc), 400)
-    except Exception as exc:
-        return _json_error(str(exc), 500)

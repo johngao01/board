@@ -18,6 +18,13 @@ export type SqlPreviewGroup = {
   url: string
   mblogid: string
   message_ids: number[]
+  total_messages: number
+  media_count: number
+  text_count: number
+  status: DeliveryCheckStatus
+  status_label: string
+  detail: string
+  ordered_types: string[]
   file_candidates: Array<{
     name: string
     path: string
@@ -101,37 +108,6 @@ export type RangeExecutionData = {
 }
 
 export type DeliveryCheckStatus = 'complete' | 'misordered' | 'missing' | 'duplicate_send' | 'unknown'
-
-export type DeliveryCheckSummary = {
-  total_posts: number
-  complete: number
-  misordered: number
-  missing: number
-  duplicate_send: number
-  unknown: number
-}
-
-export type DeliveryCheckItem = {
-  post_key: string
-  url: string
-  idstr: string
-  mblogid: string
-  username: string
-  userid: string
-  total_messages: number
-  media_count: number
-  text_count: number
-  status: DeliveryCheckStatus
-  status_label: string
-  detail: string
-  ordered_types: string[]
-  message_ids: number[]
-}
-
-export type DeliveryCheckData = {
-  summary: DeliveryCheckSummary
-  results: DeliveryCheckItem[]
-}
 
 export type MessageDeleteApiResponse<T> = {
   status: 'success' | 'error'
