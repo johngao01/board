@@ -31,6 +31,7 @@ type ExecuteModalState = {
 type PreviewNoticeState = {
   message: string
   token: number
+  kind?: 'success' | 'error'
 } | null
 
 type ExpandedPostState = Record<string, boolean>
@@ -104,6 +105,14 @@ function createCondition(field = 'MESSAGE_ID', operator = 'gte'): QueryCondition
   }
 }
 
+function createNotice(message: string, kind: 'success' | 'error' = 'success'): PreviewNoticeState {
+  return {
+    message,
+    kind,
+    token: Date.now(),
+  }
+}
+
 async function postJson<T>(path: string, payload: object): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -155,8 +164,8 @@ export function MessageManagePage() {
   const [rangeSortOrder, setRangeSortOrder] = useState<RangeSortOrder>('asc')
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>('non_complete')
   const [logs, setLogs] = useState<string[]>([])
-  const [feedback, setFeedback] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [, setFeedback] = useState<string | null>(null)
+  const [, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState<'sql-preview' | 'single-execute' | 'range-preview' | 'range-single-execute' | 'logs' | 'meta' | ''>('')
   const [rangeConfirmed, setRangeConfirmed] = useState(false)
   const [executeModal, setExecuteModal] = useState<ExecuteModalState>(null)
@@ -649,16 +658,14 @@ export function MessageManagePage() {
       setSqlPreviewForTab(sqlTab, data)
       setPreviewPayloadForTab(sqlTab, payload)
       setQuerySignatureForTab(sqlTab, querySignature)
-      setPreviewNotice({
-        message: `已生成删除预览，共 ${data.summary.target_posts} 个 post、${data.summary.target_messages} 条消息。`,
-        token: Date.now(),
-      })
+      setPreviewNotice(createNotice(`已生成删除预览，共 ${data.summary.target_posts} 个 post、${data.summary.target_messages} 条消息。`))
       await refreshLogs()
     } catch (requestError) {
       setSqlPreviewForTab(sqlTab, null)
       setPreviewPayloadForTab(sqlTab, null)
       setQuerySignatureForTab(sqlTab, null)
       setError(requestError instanceof Error ? requestError.message : '预览失败')
+      setPreviewNotice(createNotice(requestError instanceof Error ? requestError.message : '预览失败', 'error'))
     } finally {
       setLoading('')
     }
@@ -670,12 +677,14 @@ export function MessageManagePage() {
     }
     if (!executeModal.deleteTelegram && !executeModal.deleteFiles && !executeModal.deleteDb) {
       setError('至少选择一项删除操作。')
+      setPreviewNotice(createNotice('至少选择一项删除操作。', 'error'))
       return
     }
 
     const executePayload = executeModal.queryTab === 'advanced_sql' ? advancedPreviewPayload : builderPreviewPayload
     if (!executePayload) {
       setError('查询条件已变化，请重新生成预览后再执行删除。')
+      setPreviewNotice(createNotice('查询条件已变化，请重新生成预览后再执行删除。', 'error'))
       return
     }
 
@@ -696,9 +705,12 @@ export function MessageManagePage() {
       updateProcessedPostsForTab(executeModal.queryTab, (current) => ({ ...current, [data.post_key]: data }))
       setExecuteModal(null)
       setFeedback(`已处理 ${data.post_key}。`)
+      setPreviewNotice(createNotice(`已处理 ${data.post_key}。`))
       await refreshLogs()
     } catch (requestError) {
+      setExecuteModal(null)
       setError(requestError instanceof Error ? requestError.message : '单条执行失败')
+      setPreviewNotice(createNotice(requestError instanceof Error ? requestError.message : '单条执行失败', 'error'))
       await refreshLogs()
     } finally {
       setLoading('')
@@ -756,17 +768,17 @@ export function MessageManagePage() {
       setStartId(String(data.start_id))
       setEndId(String(data.end_id))
       setRangeCount(String(data.message_count))
-      setPreviewNotice({
-        message: useLatestMessages
+      setPreviewNotice(createNotice(
+        useLatestMessages
           ? `未填写区间，已自动加载最新 ${data.message_count} 条 Telegram 消息。`
           : `已生成 ID 区间预览，共 ${data.message_count} 条 Telegram 消息。`,
-        token: Date.now(),
-      })
+      ))
       await refreshLogs()
     } catch (requestError) {
       setRangePreview(null)
       setRangeQuerySignature(null)
       setError(requestError instanceof Error ? requestError.message : 'ID 区间预览失败')
+      setPreviewNotice(createNotice(requestError instanceof Error ? requestError.message : 'ID 区间预览失败', 'error'))
     } finally {
       setLoading('')
     }
@@ -775,6 +787,7 @@ export function MessageManagePage() {
   async function executeSingleRangeDelete(messageId: number) {
     if (!rangePreview) {
       setError('请先生成 ID 区间预览。')
+      setPreviewNotice(createNotice('请先生成 ID 区间预览。', 'error'))
       return
     }
 
@@ -802,6 +815,7 @@ export function MessageManagePage() {
         [messageId]: data.summary.telegram_failed > 0 ? 'failed' : 'success',
       }))
       setFeedback(`消息 ${messageId} 删除执行完成。`)
+      setPreviewNotice(createNotice(`消息 ${messageId} 删除执行完成。`))
       await refreshLogs()
     } catch (requestError) {
       setProcessedRangeMessages((current) => ({
@@ -809,6 +823,7 @@ export function MessageManagePage() {
         [messageId]: 'failed',
       }))
       setError(requestError instanceof Error ? requestError.message : 'ID 区间执行失败')
+      setPreviewNotice(createNotice(requestError instanceof Error ? requestError.message : 'ID 区间执行失败', 'error'))
       await refreshLogs()
     } finally {
       setLoading('')
@@ -823,11 +838,12 @@ export function MessageManagePage() {
         description={pageInfo.description}
       />
 
-      {feedback ? <div className="info-banner">{feedback}</div> : null}
-      {error ? <div className="error-banner">{error}</div> : null}
       {previewNotice ? (
         <div className="save-result-modal-backdrop" aria-live="polite">
-          <section className="save-result-modal save-result-modal-success delete-feedback-toast" role="status">
+          <section
+            className={`save-result-modal ${previewNotice.kind === 'error' ? 'save-result-modal-error' : 'save-result-modal-success'} delete-feedback-toast`}
+            role="status"
+          >
             <p className="delete-feedback-toast-message">{previewNotice.message}</p>
           </section>
         </div>

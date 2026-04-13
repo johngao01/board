@@ -7,7 +7,7 @@ import { mainPageInfo } from '../config/page-info'
 import { useChartTheme } from '../lib/chart-theme'
 import { PageIntro } from '../components/PageIntro'
 import { loadSessionCached, writeSessionCache } from '../lib/session-cache'
-import type { UserListResponse, UserRecord, UserUpdateResponse } from '../lib/users'
+import type { UserListResponse, UserLogsResponse, UserRecord, UserUpdateResponse } from '../lib/users'
 
 type ActiveCell = {
   rowKey: string
@@ -310,6 +310,8 @@ export function UserManagePage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [userLogs, setUserLogs] = useState<string[]>([])
+  const [logsLoading, setLogsLoading] = useState(false)
   const [saveResult, setSaveResult] = useState<SaveResultState | null>(null)
   const [activeCell, setActiveCell] = useState<ActiveCell>(null)
   const [collapsed, setCollapsed] = useState<Record<UserSectionId, boolean>>(() => {
@@ -365,6 +367,34 @@ export function UserManagePage() {
     }
 
     void loadUsers()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadUserLogs() {
+      setLogsLoading(true)
+      try {
+        const response = await apiGet<UserLogsResponse>('/api/niceme/users/logs')
+        if (!cancelled) {
+          setUserLogs(response.data?.lines ?? [])
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFeedback(error instanceof Error ? error.message : '用户日志加载失败')
+        }
+      } finally {
+        if (!cancelled) {
+          setLogsLoading(false)
+        }
+      }
+    }
+
+    void loadUserLogs()
 
     return () => {
       cancelled = true
@@ -592,6 +622,12 @@ export function UserManagePage() {
         before: previousValue || '-',
         after: nextValue || '-',
       })
+      try {
+        const logsResponse = await apiGet<UserLogsResponse>('/api/niceme/users/logs')
+        setUserLogs(logsResponse.data?.lines ?? [])
+      } catch {
+        // 日志区独立失败时不影响主流程保存结果
+      }
     } catch (error) {
       setSaveResult({
         status: 'error',
@@ -604,6 +640,44 @@ export function UserManagePage() {
         before: previousValue || '-',
         after: nextValue || '-',
       })
+    }
+  }
+
+  async function refreshUserLogs() {
+    setLogsLoading(true)
+    try {
+      const response = await apiGet<UserLogsResponse>('/api/niceme/users/logs')
+      setUserLogs(response.data?.lines ?? [])
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : '用户日志读取失败')
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
+  async function clearUserLogs() {
+    const confirmed = window.confirm('确认清理用户修改日志吗？')
+    if (!confirmed) {
+      return
+    }
+
+    setLogsLoading(true)
+    try {
+      const response = await fetch('/api/niceme/users/logs/clear', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+        },
+      })
+      const result = (await response.json()) as UserLogsResponse
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(result.msg || '用户日志清理失败')
+      }
+      setUserLogs(result.data?.lines ?? [])
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : '用户日志清理失败')
+    } finally {
+      setLogsLoading(false)
     }
   }
 
@@ -1159,6 +1233,30 @@ export function UserManagePage() {
             </div>
           </div>
         ) : null}
+      </section>
+
+      <section className="dashboard-section">
+        <div className="section-header theme-table delete-log-section-header">
+          <span className="section-title-group">
+            <span className="drag-handle">⋮⋮</span>
+            <span className="section-title">用户修改日志</span>
+          </span>
+          <div className="delete-log-header-actions">
+            <button type="button" className="header-button" onClick={() => void refreshUserLogs()} disabled={logsLoading}>
+              {logsLoading ? '刷新中...' : '刷新'}
+            </button>
+            <button type="button" className="reset-button" onClick={() => void clearUserLogs()} disabled={logsLoading}>
+              {logsLoading ? '处理中...' : '清理日志'}
+            </button>
+          </div>
+        </div>
+        <div className="section-content">
+          <div className="delete-log-shell">
+            <pre className="delete-log-output">
+              {userLogs.length ? userLogs.join('\n') : '暂无用户修改日志'}
+            </pre>
+          </div>
+        </div>
       </section>
     </section>
   )

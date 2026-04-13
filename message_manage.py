@@ -530,33 +530,33 @@ class MessageDeleteService:
 
     async def delete_telegram_for_post(self, group: PostGroup) -> tuple[list[int], list[tuple[int, str]]]:
         """删除一个 post 对应的整组 Telegram 消息。"""
-        bot = self.build_bot()
         message_ids = group.message_ids
         chat_id = group.sample.chat_id
         self.log("info", f"开始删除 Telegram 消息: post={group.post_key}, chat_id={chat_id}, message_ids={message_ids}")
         try:
+            bot = self.build_bot()
             await bot.delete_messages(chat_id=chat_id, message_ids=message_ids)
             self.log("info", f"Telegram 消息删除完成: post={group.post_key}, count={len(message_ids)}")
             return message_ids, []
-        except telegram.error.TelegramError as exc:
+        except Exception as exc:
             self.log("error", f"Telegram 消息删除失败: post={group.post_key}, error={exc}")
             return [], [(message_id, str(exc)) for message_id in message_ids]
 
     async def delete_telegram_by_id_range(self, message_ids: list[int]) -> tuple[list[int], list[tuple[int, str]]]:
         """按固定 chat 的消息 ID 区间直接删除 Telegram 消息。"""
-        bot = self.build_bot()
         self.log(
             "info",
             f"开始按消息 ID 范围删除 Telegram 消息: chat_id={self.developer_chat_id}, message_ids={message_ids}",
         )
         try:
+            bot = self.build_bot()
             await bot.delete_messages(chat_id=self.developer_chat_id, message_ids=message_ids)
             self.log(
                 "info",
                 f"按消息 ID 范围删除 Telegram 消息完成: chat_id={self.developer_chat_id}, count={len(message_ids)}",
             )
             return message_ids, []
-        except telegram.error.TelegramError as exc:
+        except Exception as exc:
             self.log("error", f"按消息 ID 范围删除 Telegram 消息失败: chat_id={self.developer_chat_id}, error={exc}")
             return [], [(message_id, str(exc)) for message_id in message_ids]
 
@@ -752,6 +752,10 @@ class MessageDeleteService:
             deleted, failed = asyncio.run(self.delete_telegram_for_post(group))
             telegram_deleted.extend(deleted)
             telegram_failed.extend(failed)
+            if telegram_failed:
+                self.log("warning", f"Telegram 删除失败，跳过后续文件和数据库删除: post={group.post_key}")
+                self.log("info", f"处理结束 post: key={group.post_key}")
+                return telegram_deleted, telegram_failed, file_deleted, file_failed, db_deleted
 
         if not skip_files:
             deleted_files, failed_files = self.delete_files_for_post(group)
