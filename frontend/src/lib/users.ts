@@ -10,3 +10,11 @@ export type UserUpdateResponse = {
   status: 'success' | 'error'
   msg?: string
 }
+
+export type UserLogsResponse = {
+  status: 'success' | 'error'
+  msg?: string
+  data: {
+    lines: string[]
+  }
+}

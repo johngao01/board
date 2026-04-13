@@ -1,6 +1,6 @@
 import datetime
-import json
 import warnings
+from collections import deque
 
 import pandas as pd
 import pymysql
@@ -14,7 +14,8 @@ warnings.filterwarnings(
 
 user_bp = Blueprint("user", __name__)
 
-USER_UPDATE_LOG_PATH = BASE_DIR / "logs" / "niceme_user_updates.jsonl"
+USER_UPDATE_LOG_PATH = BASE_DIR / "logs" / "niceme_user_updates.log"
+USER_LOG_TAIL_LINES = 300
 
 
 def detect_platform(url):
@@ -48,11 +49,45 @@ def build_user_url(platform, userid):
     return ""
 
 
+def _format_log_value(value):
+    """把日志里的值统一格式化，避免空值显示不清晰。"""
+    text = "" if value is None else str(value)
+    return text if text else "-"
+
+
 def append_user_update_log(entry):
     """把用户资料修改记录追加写入日志文件。"""
     USER_UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with USER_UPDATE_LOG_PATH.open("a", encoding="utf-8") as log_file:
-        log_file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        changes = entry.get("changes") or []
+        summary = (
+            f"{entry['timestamp']} | INFO | 用户表更新 | USERID={entry['user_id']} | "
+            f"平台={_format_log_value(entry.get('platform'))} | 修改字段数={len(changes)}"
+        )
+        log_file.write(summary + "\n")
+        for item in changes:
+            log_file.write(
+                "  - 字段={field} | 修改前={before} | 修改后={after}\n".format(
+                    field=_format_log_value(item.get("field")),
+                    before=_format_log_value(item.get("before")),
+                    after=_format_log_value(item.get("after")),
+                )
+            )
+
+
+def read_user_update_log_tail(limit=USER_LOG_TAIL_LINES):
+    """读取用户修改日志的尾部内容。"""
+    if not USER_UPDATE_LOG_PATH.exists():
+        return []
+
+    with USER_UPDATE_LOG_PATH.open("r", encoding="utf-8") as log_file:
+        return list(deque((line.rstrip("\n") for line in log_file), maxlen=max(limit, 1)))
+
+
+def clear_user_update_logs():
+    """清空用户修改日志。"""
+    USER_UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    USER_UPDATE_LOG_PATH.write_text("", encoding="utf-8")
 
 
 def process_messages_df(df):
@@ -100,6 +135,36 @@ def list_niceme_users():
         return jsonify({"status": "error", "msg": str(exc), "data": []}), 500
     finally:
         conn.close()
+
+
+@user_bp.get("/api/niceme/users/logs")
+def list_niceme_user_logs():
+    """返回用户管理页展示所需的修改日志。"""
+    try:
+        limit = int(request.args.get("limit", USER_LOG_TAIL_LINES))
+        return jsonify({
+            "status": "success",
+            "data": {
+                "lines": read_user_update_log_tail(limit=limit),
+            },
+        })
+    except Exception as exc:
+        return jsonify({"status": "error", "msg": str(exc), "data": {"lines": []}}), 500
+
+
+@user_bp.post("/api/niceme/users/logs/clear")
+def clear_niceme_user_logs():
+    """清空用户管理页的修改日志。"""
+    try:
+        clear_user_update_logs()
+        return jsonify({
+            "status": "success",
+            "data": {
+                "lines": [],
+            },
+        })
+    except Exception as exc:
+        return jsonify({"status": "error", "msg": str(exc), "data": {"lines": []}}), 500
 
 
 @user_bp.route("/api/niceme/users/<string:user_id>", methods=["PUT"])
