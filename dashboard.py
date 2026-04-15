@@ -204,13 +204,13 @@ def list_niceme_messages():
     try:
         sql = """
             SELECT m.MESSAGE_ID,
-                   DATE_ADD(m.DATE_TIME, INTERVAL 8 HOUR) as local_time,
-                   m.userid,
+                   DATE_ADD(m.DATE_TIME, INTERVAL 8 HOUR) as LOCAL_TIME,
+                   m.USERID,
                    m.USERNAME,
                    m.URL,
                    m.CAPTION,
-                   u.valid,
-                   m.text_raw
+                   u.VALID,
+                   m.TEXT_RAW
             FROM messages m
             LEFT JOIN user u ON m.USERID = u.USERID
             WHERE m.DATE_TIME >= %s
@@ -226,8 +226,8 @@ def list_niceme_messages():
             url = str(row["URL"])
             caption = row["CAPTION"] or ""
             platform = detect_platform(url)
-            user_url = build_user_url(platform, row["userid"])
-            valid = row["valid"]
+            user_url = build_user_url(platform, row["USERID"])
+            valid = row["VALID"]
             msg_type = "关注" if (pd.notnull(valid) and valid > 0) else "喜欢"
             file_type = "未知"
             if caption.lower().endswith((".mp4", ".mov")):
@@ -238,9 +238,9 @@ def list_niceme_messages():
             result.append(
                 {
                     "id": row["MESSAGE_ID"],
-                    "time": row["local_time"].strftime("%H:%M:%S"),
+                    "time": row["LOCAL_TIME"].strftime("%H:%M:%S"),
                     "username": row["USERNAME"] or "未知",
-                    "text": row["text_raw"],
+                    "text": row["TEXT_RAW"],
                     "user_url": user_url,
                     "platform": platform,
                     "type": msg_type,
