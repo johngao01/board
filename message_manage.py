@@ -480,11 +480,9 @@ class MessageDeleteService:
             for row in rows
             if row.is_media_message and row.caption.strip()
         })
-        matched: dict[str, list[Path]] = {}
-        if not self.download_root.exists():
-            return {name: [] for name in candidate_names}
+        matched = {}
         for name in candidate_names:
-            matched[name] = [path for path in self.download_root.rglob(name) if path.is_file()]
+            matched[name] = [name]
         return matched
 
     def iter_post_groups(self, rows: list[MessageRow], *, skip_files: bool) -> Iterator[PostGroup]:
@@ -584,7 +582,7 @@ class MessageDeleteService:
         if not message_ids:
             return 0
         placeholders = ",".join(["%s"] * len(message_ids))
-        sql = f"DELETE FROM messages WHERE MESSAGE_ID IN ({placeholders})"
+        sql = f"DELETE FROM tgmsg WHERE MESSAGE_ID IN ({placeholders})"
         conn = self.create_db_conn()
         try:
             with conn.cursor() as cursor:
