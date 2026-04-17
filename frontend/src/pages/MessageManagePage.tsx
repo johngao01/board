@@ -260,16 +260,18 @@ export function MessageManagePage() {
       { posts: 0, messages: 0 },
     )
   }, [processedPosts, sortedSqlGroups])
-  const sortedRangeMessageIds = useMemo(() => {
+  const sortedRangeMessages = useMemo(() => {
     if (!rangePreview) {
       return []
     }
 
-    const messageIds = [...rangePreview.message_ids]
-    messageIds.sort((left, right) => (
-      rangeSortOrder === 'asc' ? left - right : right - left
+    const messages = [...rangePreview.messages]
+    messages.sort((left, right) => (
+      rangeSortOrder === 'asc'
+        ? left.message_id - right.message_id
+        : right.message_id - left.message_id
     ))
-    return messageIds
+    return messages
   }, [rangePreview, rangeSortOrder])
   const rangeProcessedSummary = useMemo(() => {
     if (!rangePreview) {
@@ -757,13 +759,11 @@ export function MessageManagePage() {
 
       const data = await postJson<RangePreviewData>('/api/niceme/message-delete/id-range/preview', requestPayload)
       setRangePreview(data)
-      setRangeQuerySignature(useLatestMessages
-        ? JSON.stringify({ start_id: '', end_id: '', range_count: '' })
-        : JSON.stringify({
-            start_id: String(data.start_id),
-            end_id: String(data.end_id),
-            range_count: String(data.message_count),
-          }))
+      setRangeQuerySignature(JSON.stringify({
+        start_id: String(data.start_id),
+        end_id: String(data.end_id),
+        range_count: String(data.message_count),
+      }))
       setRangeSortOrder('asc')
       setStartId(String(data.start_id))
       setEndId(String(data.end_id))
@@ -1313,7 +1313,7 @@ export function MessageManagePage() {
                     </div>
 
                     <div className="delete-range-list">
-                      {sortedRangeMessageIds.map((messageId) => {
+                      {sortedRangeMessages.map(({ message_id: messageId, caption }) => {
                         const state = processedRangeMessages[messageId]
                         return (
                           <article
@@ -1322,8 +1322,16 @@ export function MessageManagePage() {
                           >
                             <div className="delete-range-item-meta">
                               <strong>{messageId}</strong>
-                              {state === 'success' ? <span className="delete-processed-tag">已删除</span> : null}
-                              {state === 'failed' ? <span className="delete-failed-tag">失败</span> : null}
+                              <div
+                                className={`delete-range-caption${caption ? '' : ' is-empty'}`}
+                                title={caption || ''}
+                              >
+                                {caption || ''}
+                              </div>
+                              <div className="delete-range-state">
+                                {state === 'success' ? <span className="delete-processed-tag">已删除</span> : null}
+                                {state === 'failed' ? <span className="delete-failed-tag">失败</span> : null}
+                              </div>
                             </div>
                             <button
                               type="button"

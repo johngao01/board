@@ -289,6 +289,20 @@ class PostDeliveryCheckResult:
         }
 
 
+@dataclass(slots=True)
+class RangePreviewItem:
+    """表示消息 ID 区间预览中的单条消息。"""
+
+    message_id: int
+    caption: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "message_id": self.message_id,
+            "caption": self.caption or "",
+        }
+
+
 class MessageDeleteService:
     """删除服务层，负责复用参考脚本的核心业务逻辑。"""
 
@@ -607,25 +621,53 @@ class MessageDeleteService:
         start_id, end_id = cls.normalize_id_range(raw_range)
         return list(range(start_id, end_id + 1))
 
-    def fetch_latest_range_message_ids(self, limit: int = 50) -> list[int]:
-        """读取固定 chat_id 下最新的一批消息 ID，并按升序返回。"""
+    def fetch_latest_range_messages(self, limit: int = 100) -> list[RangePreviewItem]:
+        """读取固定 chat_id 下最新的一批消息预览，并按升序返回。"""
         normalized_limit = max(int(limit), 1)
         sql = """
-            SELECT MESSAGE_ID
+            SELECT MESSAGE_ID, COALESCE(CAPTION, '')
             FROM messages
-            WHERE CHAT_ID = %s
+            WHERE CAST(CHAT_ID AS UNSIGNED) = %s
             ORDER BY MESSAGE_ID DESC
             LIMIT %s
         """
         with self.create_db_conn() as conn, conn.cursor() as cursor:
-            cursor.execute(sql, (str(self.developer_chat_id), normalized_limit))
+            cursor.execute(sql, (self.developer_chat_id, normalized_limit))
             rows = cursor.fetchall()
 
-        message_ids = [int(row[0]) for row in rows if row and row[0] is not None]
-        if not message_ids:
+        preview_items = [
+            RangePreviewItem(message_id=int(row[0]), caption=str(row[1] or ""))
+            for row in rows
+            if row and row[0] is not None
+        ]
+        if not preview_items:
             raise ValueError(f"未找到 chat_id={self.developer_chat_id} 的消息记录")
-        message_ids.sort()
-        return message_ids
+        preview_items.sort(key=lambda item: item.message_id)
+        return preview_items
+
+    def fetch_range_messages(self, start_id: int, end_id: int) -> list[RangePreviewItem]:
+        """读取指定消息 ID 区间的消息预览，并补齐缺失 caption。"""
+        normalized_start_id, normalized_end_id = self.normalize_id_range((start_id, end_id))
+        sql = """
+            SELECT MESSAGE_ID, COALESCE(CAPTION, '')
+            FROM messages
+            WHERE CAST(CHAT_ID AS UNSIGNED) = %s
+              AND CAST(MESSAGE_ID AS UNSIGNED) BETWEEN %s AND %s
+            ORDER BY MESSAGE_ID ASC
+        """
+        with self.create_db_conn() as conn, conn.cursor() as cursor:
+            cursor.execute(sql, (self.developer_chat_id, normalized_start_id, normalized_end_id))
+            rows = cursor.fetchall()
+
+        caption_map = {
+            int(row[0]): str(row[1] or "")
+            for row in rows
+            if row and row[0] is not None
+        }
+        return [
+            RangePreviewItem(message_id=message_id, caption=caption_map.get(message_id, ""))
+            for message_id in range(normalized_start_id, normalized_end_id + 1)
+        ]
 
     def group_to_preview_dict(self, group: PostGroup, index: int, total_posts: int) -> dict[str, Any]:
         """把一个 post 分组转换成前端预览卡片结构。"""
@@ -966,7 +1008,8 @@ class MessageDeleteService:
     def preview_id_range(self, start_id: int | None, end_id: int | None) -> dict[str, Any]:
         """生成消息 ID 区间模式的预览结果。"""
         if start_id is None and end_id is None:
-            message_ids = self.fetch_latest_range_message_ids(limit=50)
+            preview_items = self.fetch_latest_range_messages(limit=100)
+            message_ids = [item.message_id for item in preview_items]
             self.log(
                 "info",
                 f"生成最新消息删除预览: chat_id={self.developer_chat_id}, "
@@ -975,7 +1018,8 @@ class MessageDeleteService:
         else:
             if start_id is None or end_id is None:
                 raise ValueError("start_id 和 end_id 必须同时填写，或全部留空")
-            message_ids = self.build_range_message_ids((start_id, end_id))
+            preview_items = self.fetch_range_messages(start_id, end_id)
+            message_ids = [item.message_id for item in preview_items]
             self.log(
                 "info",
                 f"生成消息 ID 范围删除预览: chat_id={self.developer_chat_id}, "
@@ -988,6 +1032,7 @@ class MessageDeleteService:
             "end_id": message_ids[-1],
             "message_count": len(message_ids),
             "message_ids": message_ids,
+            "messages": [item.to_dict() for item in preview_items],
         }
 
     def execute_id_range(self, start_id: int, end_id: int) -> dict[str, Any]:

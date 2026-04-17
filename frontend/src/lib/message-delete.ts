@@ -98,6 +98,10 @@ export type RangePreviewData = {
   end_id: number
   message_count: number
   message_ids: number[]
+  messages: Array<{
+    message_id: number
+    caption: string
+  }>
 }
 
 export type RangeExecutionData = {

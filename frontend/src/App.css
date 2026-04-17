@@ -591,11 +591,13 @@
 }
 
 .delete-range-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 12px;
-  padding: 14px 16px;
+  min-height: 132px;
+  padding: 18px 18px 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel-raised);
@@ -611,14 +613,47 @@
 
 .delete-range-item-meta {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
-  flex-wrap: wrap;
+  min-width: 0;
+  padding-right: 92px;
 }
 
 .delete-range-item-meta strong {
   font-size: 28px;
   line-height: 1;
+}
+
+.delete-range-caption {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.delete-range-caption.is-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.delete-range-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.delete-range-item .delete-danger-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
 }
 
 .delete-failed-tag {
@@ -734,7 +769,17 @@
   }
 
   .delete-range-item {
-    grid-template-columns: 1fr;
+    min-height: auto;
+    padding-right: 16px;
+  }
+
+  .delete-range-item-meta {
+    padding-right: 0;
+  }
+
+  .delete-range-item .delete-danger-button {
+    position: static;
+    align-self: flex-start;
   }
 
   .delete-reset-button {
