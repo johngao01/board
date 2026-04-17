@@ -16,7 +16,8 @@ type ActiveCell = {
 } | null
 
 type SortDirection = 'asc' | 'desc'
-type UserQuickFilter = '' | 'active' | 'special' | 'stale'
+type UserQuickFilter = '' | 'active' | 'special' | 'other'
+type FreshnessStatsMode = 'tracked' | 'other'
 
 type ChartDatum = {
   name: string
@@ -38,7 +39,7 @@ type UserPanelStats = {
   total: number
   active: number
   special: number
-  stale: number
+  other: number
   platformData: ChartDatum[]
   platformTypeData: GroupedChartDatum[]
   validData: ChartDatum[]
@@ -54,6 +55,14 @@ type SaveResultState = {
   before: string
   after: string
 }
+
+const VALID_EDIT_OPTIONS = [
+  { value: '2', label: '特别关注' },
+  { value: '1', label: '普通关注' },
+  { value: '0', label: '很久没更新' },
+  { value: '-1', label: '不喜欢了' },
+  { value: '-2', label: '账号失效' },
+]
 
 function toDisplayValue(value: string | number | null | undefined) {
   if (value === null || value === undefined) {
@@ -109,18 +118,47 @@ function platformLabel(rawPlatform: string) {
 function validLabel(valid: number | null) {
   switch (valid) {
     case -2:
-      return '失效'
+      return '账号失效'
     case -1:
-      return '停更'
+      return '不喜欢了'
     case 0:
-      return '取消关注'
+      return '很久没更新'
     case 1:
-      return '特别关注'
-    case 2:
       return '普通关注'
+    case 2:
+      return '特别关注'
     default:
       return '未知状态'
   }
+}
+
+function validLabelFromRaw(rawValid: string) {
+  if (!rawValid) {
+    return '-'
+  }
+
+  const numericValid = Number(rawValid)
+  return Number.isFinite(numericValid) ? validLabel(numericValid) : rawValid
+}
+
+function isTrackedValid(valid: number | null) {
+  return valid === 1 || valid === 2
+}
+
+function isOtherValid(valid: number | null) {
+  return valid === 0 || valid === -1 || valid === -2
+}
+
+function matchesFreshnessStatsMode(valid: number | null, mode: FreshnessStatsMode) {
+  return mode === 'tracked' ? isTrackedValid(valid) : isOtherValid(valid)
+}
+
+function formatFieldValue(field: string, rawValue: string) {
+  if (field === 'valid') {
+    return validLabelFromRaw(rawValue)
+  }
+
+  return rawValue || '-'
 }
 
 function freshnessBucket(scrapyTime: Date | null, now: Date) {
@@ -210,7 +248,10 @@ function compareMixed(left: string, right: string, direction: SortDirection) {
   return direction === 'asc' ? result : -result
 }
 
-function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<typeof getDerivedValues> }>): UserPanelStats {
+function buildUserPanelStats(
+  rows: Array<{ row: UserRecord; derived: ReturnType<typeof getDerivedValues> }>,
+  freshnessStatsMode: FreshnessStatsMode,
+): UserPanelStats {
   const platformMap = new Map<string, ChartDatum>()
   const platformTypeMap = new Map<string, GroupedChartDatum>()
   const validMap = new Map<string, ChartDatum>()
@@ -225,7 +266,7 @@ function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<
 
   let active = 0
   let special = 0
-  let stale = 0
+  let other = 0
 
   for (const item of rows) {
     const { derived } = item
@@ -249,25 +290,28 @@ function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<
       value: (validMap.get(derived.currentValid)?.value ?? 0) + 1,
       filterValue: derived.currentValid,
     })
-    freshnessMap.set(derived.freshness, {
-      name: derived.freshness,
-      value: (freshnessMap.get(derived.freshness)?.value ?? 0) + 1,
-      filterValue: derived.freshness,
-    })
     monthMap.set(derived.latestMonth, {
       name: derived.latestMonth,
       value: (monthMap.get(derived.latestMonth)?.value ?? 0) + 1,
       filterValue: derived.latestMonth,
     })
 
+    if (matchesFreshnessStatsMode(valid, freshnessStatsMode)) {
+      freshnessMap.set(derived.freshness, {
+        name: derived.freshness,
+        value: (freshnessMap.get(derived.freshness)?.value ?? 0) + 1,
+        filterValue: derived.freshness,
+      })
+    }
+
     if ((valid ?? 0) > 0) {
       active += 1
     }
-    if (valid === 1) {
+    if (valid === 2) {
       special += 1
     }
-    if (derived.freshness === '7天以上' || derived.freshness === '从未抓取') {
-      stale += 1
+    if (isOtherValid(valid)) {
+      other += 1
     }
   }
 
@@ -275,7 +319,7 @@ function buildUserPanelStats(rows: Array<{ row: UserRecord; derived: ReturnType<
     total: rows.length,
     active,
     special,
-    stale,
+    other,
     platformData: Array.from(platformMap.values()),
     platformTypeData: Array.from(platformTypeMap.values()),
     validData: Array.from(validMap.values()),
@@ -303,7 +347,6 @@ export function UserManagePage() {
   const [query, setQuery] = useState('')
   const [platformFilter, setPlatformFilter] = useState('')
   const [validFilter, setValidFilter] = useState('')
-  const [freshnessFilter, setFreshnessFilter] = useState('')
   const [latestMonthFilter, setLatestMonthFilter] = useState('')
   const [quickFilter, setQuickFilter] = useState<UserQuickFilter>('')
   const [sortColumn, setSortColumn] = useState('USERID')
@@ -314,6 +357,7 @@ export function UserManagePage() {
   const [logsLoading, setLogsLoading] = useState(false)
   const [saveResult, setSaveResult] = useState<SaveResultState | null>(null)
   const [activeCell, setActiveCell] = useState<ActiveCell>(null)
+  const [freshnessStatsMode, setFreshnessStatsMode] = useState<FreshnessStatsMode>('tracked')
   const [collapsed, setCollapsed] = useState<Record<UserSectionId, boolean>>(() => {
     try {
       return {
@@ -328,7 +372,6 @@ export function UserManagePage() {
   })
   const [platformChart, setPlatformChart] = useState<ECharts | null>(null)
   const [validChart, setValidChart] = useState<ECharts | null>(null)
-  const [freshnessChart, setFreshnessChart] = useState<ECharts | null>(null)
   const [latestChart, setLatestChart] = useState<ECharts | null>(null)
   const deferredQuery = useDeferredValue(query)
 
@@ -460,11 +503,6 @@ export function UserManagePage() {
     [derivedRows],
   )
 
-  const freshnessOptions = useMemo(
-    () => ['24小时内', '3天内', '7天内', '7天以上', '从未抓取'].filter((option) => derivedRows.some((item) => item.derived.freshness === option)),
-    [derivedRows],
-  )
-
   const filteredRows = useMemo(() => {
     const keyword = deferredQuery.trim().toLowerCase()
 
@@ -476,26 +514,18 @@ export function UserManagePage() {
           Object.values(item.draft).some((value) => String(value ?? '').toLowerCase().includes(keyword))
         const matchesPlatform = !platformFilter || item.derived.currentPlatform === platformFilter
         const matchesValid = !validFilter || item.derived.currentValid === validFilter
-        const matchesFreshness = !freshnessFilter || item.derived.freshness === freshnessFilter
         const matchesLatestMonth = !latestMonthFilter || item.derived.latestMonth === latestMonthFilter
         const numericValid = Number(item.derived.currentValid)
         const matchesQuickFilter =
           quickFilter === 'active'
             ? numericValid > 0
             : quickFilter === 'special'
-              ? numericValid === 1
-              : quickFilter === 'stale'
-                ? item.derived.freshness === '7天以上' || item.derived.freshness === '从未抓取'
+              ? numericValid === 2
+              : quickFilter === 'other'
+                ? isOtherValid(numericValid)
                 : true
 
-        return (
-          matchesSearch &&
-          matchesPlatform &&
-          matchesValid &&
-          matchesFreshness &&
-          matchesLatestMonth &&
-          matchesQuickFilter
-        )
+        return matchesSearch && matchesPlatform && matchesValid && matchesLatestMonth && matchesQuickFilter
       })
       .sort((left, right) => {
         const leftValue =
@@ -516,7 +546,6 @@ export function UserManagePage() {
   }, [
     deferredQuery,
     derivedRows,
-    freshnessFilter,
     latestMonthFilter,
     platformFilter,
     quickFilter,
@@ -525,22 +554,27 @@ export function UserManagePage() {
     validFilter,
   ])
 
-  const panelStats = useMemo(() => buildUserPanelStats(filteredRows), [filteredRows])
-  const basePanelStats = useMemo(() => buildUserPanelStats(derivedRows), [derivedRows])
-  const hasUserFilters = Boolean(
-    deferredQuery.trim() || platformFilter || validFilter || freshnessFilter || latestMonthFilter || quickFilter,
-  )
+  const panelStats = useMemo(() => buildUserPanelStats(filteredRows, freshnessStatsMode), [filteredRows, freshnessStatsMode])
+  const basePanelStats = useMemo(() => buildUserPanelStats(derivedRows, freshnessStatsMode), [derivedRows, freshnessStatsMode])
+  const hasUserFilters = Boolean(deferredQuery.trim() || platformFilter || validFilter || latestMonthFilter || quickFilter)
 
   function clearAllFilters() {
     setQuery('')
     setPlatformFilter('')
     setValidFilter('')
-    setFreshnessFilter('')
     setLatestMonthFilter('')
     setQuickFilter('')
+    setFreshnessStatsMode('tracked')
   }
 
   function toggleQuickFilter(nextFilter: Exclude<UserQuickFilter, ''>) {
+    if (nextFilter === 'active' || nextFilter === 'special') {
+      setFreshnessStatsMode('tracked')
+    }
+    if (nextFilter === 'other') {
+      setFreshnessStatsMode('other')
+    }
+
     setQuickFilter((current) => (current === nextFilter ? '' : nextFilter))
   }
 
@@ -572,6 +606,8 @@ export function UserManagePage() {
   async function saveCell(row: UserRecord, field: string, nextValue: string) {
     const rowKey = buildRowKey(row)
     const previousValue = toDisplayValue(row[field])
+    const previousDisplayValue = formatFieldValue(field, previousValue)
+    const nextDisplayValue = formatFieldValue(field, nextValue)
 
     if (previousValue === nextValue) {
       return
@@ -583,7 +619,7 @@ export function UserManagePage() {
       const payload = { [field]: nextValue }
       const originalUserId = toDisplayValue(row.USERID)
       const originalPlatform = toDisplayValue(row.platform)
-      const successMessage = `将 ${originalUserId} 的 ${field} 从 ${previousValue || '-'} 修改为 ${nextValue || '-'} 成功`
+      const successMessage = `将 ${originalUserId} 的 ${field} 从 ${previousDisplayValue} 修改为 ${nextDisplayValue} 成功`
 
       const response = await fetch(
         `/api/niceme/users/${encodeURIComponent(originalUserId)}?platform=${encodeURIComponent(originalPlatform)}`,
@@ -619,8 +655,8 @@ export function UserManagePage() {
         message: result.msg || successMessage,
         userId: originalUserId,
         field,
-        before: previousValue || '-',
-        after: nextValue || '-',
+        before: previousDisplayValue,
+        after: nextDisplayValue,
       })
       try {
         const logsResponse = await apiGet<UserLogsResponse>('/api/niceme/users/logs')
@@ -633,12 +669,12 @@ export function UserManagePage() {
         status: 'error',
         message:
           error instanceof Error
-            ? `将 ${toDisplayValue(row.USERID)} 的 ${field} 从 ${previousValue || '-'} 修改为 ${nextValue || '-'} 失败：${error.message}`
-            : `将 ${toDisplayValue(row.USERID)} 的 ${field} 从 ${previousValue || '-'} 修改为 ${nextValue || '-'} 失败`,
+            ? `将 ${toDisplayValue(row.USERID)} 的 ${field} 从 ${previousDisplayValue} 修改为 ${nextDisplayValue} 失败：${error.message}`
+            : `将 ${toDisplayValue(row.USERID)} 的 ${field} 从 ${previousDisplayValue} 修改为 ${nextDisplayValue} 失败`,
         userId: toDisplayValue(row.USERID),
         field,
-        before: previousValue || '-',
-        after: nextValue || '-',
+        before: previousDisplayValue,
+        after: nextDisplayValue,
       })
     }
   }
@@ -700,7 +736,6 @@ export function UserManagePage() {
     [platformChart],
   )
   useEffect(() => bindBlankClickReset(validChart, () => setValidFilter('')), [validChart])
-  useEffect(() => bindBlankClickReset(freshnessChart, () => setFreshnessFilter('')), [freshnessChart])
   useEffect(() => bindBlankClickReset(latestChart, () => setLatestMonthFilter('')), [latestChart])
 
   const platformChartOption = useMemo<EChartsOption>(
@@ -966,7 +1001,7 @@ export function UserManagePage() {
                 className={`dashboard-card user-manage-kpi-card accent-green${quickFilter === 'active' ? ' is-active' : ''}`}
                 onClick={() => toggleQuickFilter('active')}
               >
-                <p className="dashboard-card-title">有效关注</p>
+                <p className="dashboard-card-title">普通/特别关注</p>
                 <strong className="dashboard-card-value">{loading ? '...' : panelStats.active}</strong>
               </button>
               <button
@@ -979,11 +1014,11 @@ export function UserManagePage() {
               </button>
               <button
                 type="button"
-                className={`dashboard-card user-manage-kpi-card${quickFilter === 'stale' ? ' is-active' : ''}`}
-                onClick={() => toggleQuickFilter('stale')}
+                className={`dashboard-card user-manage-kpi-card${quickFilter === 'other' ? ' is-active' : ''}`}
+                onClick={() => toggleQuickFilter('other')}
               >
-                <p className="dashboard-card-title">待巡检</p>
-                <strong className="dashboard-card-value">{loading ? '...' : panelStats.stale}</strong>
+                <p className="dashboard-card-title">其它关注类型</p>
+                <strong className="dashboard-card-value">{loading ? '...' : panelStats.other}</strong>
               </button>
             </div>
           </div>
@@ -1038,13 +1073,27 @@ export function UserManagePage() {
 
               <section className="panel user-manage-chart-card">
                 <div className="panel-head">
-                  <h4>抓取新鲜度</h4>
+                  <h4>最新作品统计</h4>
+                  <div className="delete-log-header-actions">
+                    <button
+                      type="button"
+                      className={`header-button user-manage-stats-toggle${freshnessStatsMode === 'tracked' ? ' is-active' : ''}`}
+                      onClick={() => setFreshnessStatsMode('tracked')}
+                    >
+                      普通/特别关注
+                    </button>
+                    <button
+                      type="button"
+                      className={`header-button user-manage-stats-toggle${freshnessStatsMode === 'other' ? ' is-active' : ''}`}
+                      onClick={() => setFreshnessStatsMode('other')}
+                    >
+                      其它
+                    </button>
+                  </div>
                 </div>
                 <ReactECharts
                   option={freshnessChartOption}
                   style={{ height: 300 }}
-                  onChartReady={setFreshnessChart}
-                  onEvents={{ click: (params: { data?: { filterValue?: string } }) => setFreshnessFilter(params.data?.filterValue ?? '') }}
                 />
               </section>
 
@@ -1097,18 +1146,10 @@ export function UserManagePage() {
                 ))}
               </select>
               <select className="user-manage-filter" value={validFilter} onChange={(event) => setValidFilter(event.target.value)}>
-                <option value="">所有 valid</option>
+                <option value="">所有关注类型</option>
                 {validOptions.map((valid) => (
                   <option key={valid} value={valid}>
-                    {valid}
-                  </option>
-                ))}
-              </select>
-              <select className="user-manage-filter" value={freshnessFilter} onChange={(event) => setFreshnessFilter(event.target.value)}>
-                <option value="">所有新鲜度</option>
-                {freshnessOptions.map((freshness) => (
-                  <option key={freshness} value={freshness}>
-                    {freshness}
+                    {validLabelFromRaw(valid)}
                   </option>
                 ))}
               </select>
@@ -1153,6 +1194,8 @@ export function UserManagePage() {
                             const isEditing = activeCell?.rowKey === rowKey && activeCell?.field === column
                             const displayValue = draft[column] ?? ''
                             const cellValue = isEditing ? activeCell?.value ?? displayValue : displayValue
+                            const isValidColumn = column === 'valid'
+                            const displayLabel = isValidColumn ? validLabelFromRaw(displayValue) : displayValue
 
                             return (
                               <td
@@ -1167,30 +1210,61 @@ export function UserManagePage() {
                                 }
                               >
                                 {isEditing ? (
-                                  <input
-                                    autoFocus
-                                    className="user-manage-cell-editor"
-                                    value={cellValue}
-                                    onChange={(event) =>
-                                      setActiveCell((current) =>
-                                        current && current.rowKey === rowKey && current.field === column
-                                          ? { ...current, value: event.target.value }
-                                          : current,
-                                      )
-                                    }
-                                    onBlur={() => setActiveCell(null)}
-                                    onKeyDown={async (event) => {
-                                      if (event.key === 'Enter') {
-                                        event.preventDefault()
-                                        await saveCell(row, column, cellValue)
+                                  isValidColumn ? (
+                                    <select
+                                      autoFocus
+                                      className="user-manage-cell-editor"
+                                      value={cellValue}
+                                      onChange={async (event) => {
+                                        const nextValue = event.target.value
+                                        setActiveCell((current) =>
+                                          current && current.rowKey === rowKey && current.field === column
+                                            ? { ...current, value: nextValue }
+                                            : current,
+                                        )
+                                        await saveCell(row, column, nextValue)
                                         setActiveCell(null)
+                                      }}
+                                      onBlur={() => setActiveCell(null)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Escape') {
+                                          event.preventDefault()
+                                          setActiveCell(null)
+                                        }
+                                      }}
+                                    >
+                                      {VALID_EDIT_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      autoFocus
+                                      className="user-manage-cell-editor"
+                                      value={cellValue}
+                                      onChange={(event) =>
+                                        setActiveCell((current) =>
+                                          current && current.rowKey === rowKey && current.field === column
+                                            ? { ...current, value: event.target.value }
+                                            : current,
+                                        )
                                       }
-                                      if (event.key === 'Escape') {
-                                        event.preventDefault()
-                                        setActiveCell(null)
-                                      }
-                                    }}
-                                  />
+                                      onBlur={() => setActiveCell(null)}
+                                      onKeyDown={async (event) => {
+                                        if (event.key === 'Enter') {
+                                          event.preventDefault()
+                                          await saveCell(row, column, cellValue)
+                                          setActiveCell(null)
+                                        }
+                                        if (event.key === 'Escape') {
+                                          event.preventDefault()
+                                          setActiveCell(null)
+                                        }
+                                      }}
+                                    />
+                                  )
                                 ) : column === 'USERID' && homepage ? (
                                   <a
                                     className="user-manage-inline-link"
@@ -1210,8 +1284,11 @@ export function UserManagePage() {
                                     {displayValue || '-'}
                                   </Link>
                                 ) : (
-                                  <span className="user-manage-cell-text" title={displayValue}>
-                                    {displayValue || '-'}
+                                  <span
+                                    className="user-manage-cell-text"
+                                    title={isValidColumn ? `源数据 ${displayValue || '-'}` : displayValue}
+                                  >
+                                    {displayLabel || '-'}
                                   </span>
                                 )}
                               </td>

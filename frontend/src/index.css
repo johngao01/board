@@ -582,6 +582,15 @@ a {
   box-shadow: 0 16px 30px rgba(0, 169, 194, 0.16);
 }
 
+.user-manage-stats-toggle {
+  min-width: 120px;
+}
+
+.user-manage-stats-toggle.is-active {
+  background: rgba(0, 234, 255, 0.14);
+  box-shadow: 0 0 0 1px rgba(0, 234, 255, 0.18) inset;
+}
+
 .stat-title,
 .dashboard-card-title {
   margin: 0 0 12px;
