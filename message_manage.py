@@ -294,12 +294,14 @@ class RangePreviewItem:
     """表示消息 ID 区间预览中的单条消息。"""
 
     message_id: int
-    caption: str
+    content: str
+    source: str = "database"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "message_id": self.message_id,
-            "caption": self.caption or "",
+            "content": self.content or "",
+            "source": self.source,
         }
 
 
@@ -590,22 +592,27 @@ class MessageDeleteService:
                     failed.append((path, str(exc)))
         return deleted, failed
 
-    def delete_db_rows_for_post(self, group: PostGroup) -> int:
-        """按 MESSAGE_ID 删除一个 post 关联的数据库记录。"""
-        message_ids = group.message_ids
-        if not message_ids:
+    def delete_db_rows_by_message_ids(self, message_ids: Sequence[int]) -> int:
+        """按 MESSAGE_ID 批量删除数据库记录。"""
+        normalized_ids = sorted({int(message_id) for message_id in message_ids})
+        if not normalized_ids:
             return 0
-        placeholders = ",".join(["%s"] * len(message_ids))
+        placeholders = ",".join(["%s"] * len(normalized_ids))
         sql = f"DELETE FROM tgmsg WHERE MESSAGE_ID IN ({placeholders})"
         conn = self.create_db_conn()
         try:
             with conn.cursor() as cursor:
-                affected = cursor.execute(sql, tuple(message_ids))
+                affected = cursor.execute(sql, tuple(normalized_ids))
             conn.commit()
-            self.log("info", f"数据库记录删除完成: post={group.post_key}, affected={affected}, message_ids={message_ids}")
             return affected
         finally:
             conn.close()
+
+    def delete_db_rows_for_post(self, group: PostGroup) -> int:
+        """按 MESSAGE_ID 删除一个 post 关联的数据库记录。"""
+        affected = self.delete_db_rows_by_message_ids(group.message_ids)
+        self.log("info", f"数据库记录删除完成: post={group.post_key}, affected={affected}, message_ids={group.message_ids}")
+        return affected
 
     @staticmethod
     def normalize_id_range(raw_range: Sequence[int]) -> tuple[int, int]:
@@ -622,10 +629,10 @@ class MessageDeleteService:
         return list(range(start_id, end_id + 1))
 
     def fetch_latest_range_messages(self, limit: int = 100) -> list[RangePreviewItem]:
-        """读取固定 chat_id 下最新的一批消息预览，并按升序返回。"""
+        """读取固定 chat_id 下最新一批消息，并补齐成连续的 message_id 预览。"""
         normalized_limit = max(int(limit), 1)
         sql = """
-            SELECT MESSAGE_ID, COALESCE(CAPTION, '')
+            SELECT MESSAGE_ID, COALESCE(NULLIF(CAPTION, ''), NULLIF(TEXT_RAW, ''), '')
             FROM messages
             WHERE CAST(CHAT_ID AS UNSIGNED) = %s
             ORDER BY MESSAGE_ID DESC
@@ -635,21 +642,32 @@ class MessageDeleteService:
             cursor.execute(sql, (self.developer_chat_id, normalized_limit))
             rows = cursor.fetchall()
 
-        preview_items = [
-            RangePreviewItem(message_id=int(row[0]), caption=str(row[1] or ""))
+        db_items = [
+            RangePreviewItem(message_id=int(row[0]), content=str(row[1] or ""), source="database")
             for row in rows
             if row and row[0] is not None
         ]
-        if not preview_items:
+        if not db_items:
             raise ValueError(f"未找到 chat_id={self.developer_chat_id} 的消息记录")
-        preview_items.sort(key=lambda item: item.message_id)
-        return preview_items
+        db_items.sort(key=lambda item: item.message_id)
+        end_id = db_items[-1].message_id
+        start_id = max(end_id - normalized_limit + 1, 1)
+        content_map = {item.message_id: item.content for item in db_items}
+        db_id_set = set(content_map)
+        return [
+            RangePreviewItem(
+                message_id=message_id,
+                content=content_map.get(message_id, ""),
+                source="database" if message_id in db_id_set else "generated",
+            )
+            for message_id in range(start_id, end_id + 1)
+        ]
 
     def fetch_range_messages(self, start_id: int, end_id: int) -> list[RangePreviewItem]:
-        """读取指定消息 ID 区间的消息预览，并补齐缺失 caption。"""
+        """读取指定消息 ID 区间的消息预览，并补齐缺失内容。"""
         normalized_start_id, normalized_end_id = self.normalize_id_range((start_id, end_id))
         sql = """
-            SELECT MESSAGE_ID, COALESCE(CAPTION, '')
+            SELECT MESSAGE_ID, COALESCE(NULLIF(CAPTION, ''), NULLIF(TEXT_RAW, ''), '')
             FROM messages
             WHERE CAST(CHAT_ID AS UNSIGNED) = %s
               AND CAST(MESSAGE_ID AS UNSIGNED) BETWEEN %s AND %s
@@ -659,13 +677,18 @@ class MessageDeleteService:
             cursor.execute(sql, (self.developer_chat_id, normalized_start_id, normalized_end_id))
             rows = cursor.fetchall()
 
-        caption_map = {
+        content_map = {
             int(row[0]): str(row[1] or "")
             for row in rows
             if row and row[0] is not None
         }
+        db_id_set = set(content_map)
         return [
-            RangePreviewItem(message_id=message_id, caption=caption_map.get(message_id, ""))
+            RangePreviewItem(
+                message_id=message_id,
+                content=content_map.get(message_id, ""),
+                source="database" if message_id in db_id_set else "generated",
+            )
             for message_id in range(normalized_start_id, normalized_end_id + 1)
         ]
 
@@ -1035,23 +1058,45 @@ class MessageDeleteService:
             "messages": [item.to_dict() for item in preview_items],
         }
 
-    def execute_id_range(self, start_id: int, end_id: int) -> dict[str, Any]:
-        """执行消息 ID 区间模式，只调用 Telegram 删除。"""
-        preview = self.preview_id_range(start_id, end_id)
-        message_ids = preview["message_ids"]
-        telegram_deleted, telegram_failed = asyncio.run(self.delete_telegram_by_id_range(message_ids))
+    def execute_id_range(
+        self,
+        *,
+        start_id: int | None = None,
+        end_id: int | None = None,
+        message_ids: Sequence[int] | None = None,
+        delete_db: bool = False,
+    ) -> dict[str, Any]:
+        """执行消息 ID 区间模式，可按连续区间或指定消息列表删除。"""
+        if message_ids:
+            normalized_message_ids = sorted({int(message_id) for message_id in message_ids})
+        else:
+            if start_id is None or end_id is None:
+                raise ValueError("start_id 和 end_id 必须同时填写，或提供 message_ids")
+            preview = self.preview_id_range(start_id, end_id)
+            normalized_message_ids = [int(message_id) for message_id in preview["message_ids"]]
+
+        if not normalized_message_ids:
+            raise ValueError("没有可执行删除的消息 ID")
+
+        self.log(
+            "info",
+            f"执行消息 ID 区间删除: chat_id={self.developer_chat_id}, "
+            f"message_ids={normalized_message_ids}, delete_db={delete_db}",
+        )
+        telegram_deleted, telegram_failed = asyncio.run(self.delete_telegram_by_id_range(normalized_message_ids))
+        db_deleted = self.delete_db_rows_by_message_ids(normalized_message_ids) if delete_db else 0
         return {
             "summary": {
-                "target_messages": len(message_ids),
+                "target_messages": len(normalized_message_ids),
                 "target_posts": 1,
                 "telegram_deleted": len(telegram_deleted),
                 "telegram_failed": len(telegram_failed),
                 "files_deleted": 0,
                 "files_failed": 0,
-                "db_deleted": 0,
+                "db_deleted": db_deleted,
             },
             "chat_id": self.developer_chat_id,
-            "message_ids": message_ids,
+            "message_ids": normalized_message_ids,
             "telegram_failed": [
                 {"message_id": message_id, "error": error}
                 for message_id, error in telegram_failed
@@ -1217,6 +1262,30 @@ def _parse_range_payload(payload: dict[str, Any]) -> tuple[int | None, int | Non
     except (TypeError, ValueError) as exc:
         raise ValueError("start_id 和 end_id 必须是整数") from exc
     return start_id, end_id
+
+
+def _parse_range_execute_payload(payload: dict[str, Any]) -> tuple[list[int] | None, int | None, int | None, bool]:
+    """解析区间删除执行参数，兼容单条、批量和整段执行。"""
+    raw_message_ids = payload.get("message_ids")
+    delete_db = bool(payload.get("delete_db"))
+
+    if raw_message_ids is not None:
+        if not isinstance(raw_message_ids, list):
+            raise ValueError("message_ids 必须是数组")
+        if not raw_message_ids:
+            raise ValueError("message_ids 不能为空")
+        if len(raw_message_ids) > 50:
+            raise ValueError("批量删除最多支持 50 条消息")
+        try:
+            normalized_message_ids = sorted({int(item) for item in raw_message_ids})
+        except (TypeError, ValueError) as exc:
+            raise ValueError("message_ids 中的值必须是整数") from exc
+        if len(normalized_message_ids) > 50:
+            raise ValueError("批量删除最多支持 50 条消息")
+        return normalized_message_ids, None, None, delete_db
+
+    start_id, end_id = _parse_range_payload(payload)
+    return None, start_id, end_id, delete_db
 
 
 def _parse_single_post_execute_payload(payload: dict[str, Any]) -> tuple[str, list[str], str, dict[str, bool], str]:
@@ -1397,15 +1466,20 @@ def message_delete_range_preview():
 
 @message_delete_bp.post("/api/niceme/message-delete/id-range/execute")
 def message_delete_range_execute():
-    """执行消息 ID 区间模式，只调用 Telegram 批量删除。"""
+    """执行消息 ID 区间模式，支持单条、批量和可选删库。"""
     payload = _get_payload()
     if payload.get("confirm_execute") is not True:
         return _json_error("执行删除前必须明确确认 confirm_execute=true", 400)
 
     try:
-        start_id, end_id = _parse_range_payload(payload)
+        message_ids, start_id, end_id, delete_db = _parse_range_execute_payload(payload)
         service = build_delete_service(log_feature="id_range")
-        result = service.execute_id_range(start_id, end_id)
+        result = service.execute_id_range(
+            start_id=start_id,
+            end_id=end_id,
+            message_ids=message_ids,
+            delete_db=delete_db,
+        )
         return jsonify({"status": "success", "data": result})
     except ValueError as exc:
         return _json_error(str(exc), 400)

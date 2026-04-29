@@ -582,8 +582,9 @@
 }
 
 .delete-range-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
   gap: 12px;
   max-height: 860px;
   overflow: auto;
@@ -595,12 +596,24 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  flex: 0 0 calc((100% - 48px) / 5);
+  max-width: calc((100% - 48px) / 5);
   gap: 12px;
-  min-height: 132px;
+  min-height: 142px;
+  height: auto;
+  align-self: start;
   padding: 18px 18px 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel-raised);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.delete-range-item.is-selected {
+  border-color: rgba(47, 187, 255, 0.45);
+  background: linear-gradient(180deg, rgba(47, 187, 255, 0.12), rgba(47, 187, 255, 0.06));
+  box-shadow: 0 10px 24px rgba(47, 187, 255, 0.12);
 }
 
 .delete-range-item.is-processed {
@@ -615,7 +628,9 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  flex: 0 0 auto;
   gap: 10px;
+  width: 100%;
   min-width: 0;
   padding-right: 92px;
 }
@@ -625,17 +640,31 @@
   line-height: 1;
 }
 
+.delete-range-message-id {
+  user-select: text;
+  cursor: text;
+  transition: color 0.18s ease;
+}
+
+.delete-range-message-id-database {
+  color: #13b981;
+}
+
+.delete-range-message-id-generated {
+  color: #ff6b7a;
+}
+
 .delete-range-caption {
-  display: -webkit-box;
+  width: 100%;
   min-width: 0;
-  overflow: hidden;
   color: var(--text-secondary);
   font-size: 15px;
   line-height: 1.5;
   word-break: break-word;
   overflow-wrap: anywhere;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
+  user-select: text;
+  cursor: text;
 }
 
 .delete-range-caption.is-empty {
@@ -648,6 +677,30 @@
   flex-wrap: wrap;
   gap: 8px;
   min-height: 36px;
+}
+
+.delete-range-selected-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(47, 187, 255, 0.14);
+  color: #1f9cff;
+  font-weight: 700;
+}
+
+.delete-range-selected-corner {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(47, 187, 255, 0.14);
+  color: #1f9cff;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .delete-range-item .delete-danger-button {
@@ -765,10 +818,12 @@
   }
 
   .delete-range-list {
-    grid-template-columns: 1fr;
+    display: flex;
   }
 
   .delete-range-item {
+    flex-basis: 100%;
+    max-width: 100%;
     min-height: auto;
     padding-right: 16px;
   }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { PageIntro } from '../components/PageIntro'
 import { mainPageInfo } from '../config/page-info'
 import type {
@@ -35,6 +35,8 @@ type PreviewNoticeState = {
 } | null
 
 type ExpandedPostState = Record<string, boolean>
+type RangeProcessState = 'success' | 'failed'
+type RangeDragMode = 'select' | 'deselect' | null
 
 type SqlPreviewPayload = {
   query_mode: 'builder' | 'advanced'
@@ -86,7 +88,7 @@ const TAB_PANEL_TITLES: Record<DeleteTab, string> = {
 const TAB_PANEL_DESCRIPTIONS: Record<DeleteTab, string> = {
   inspect: '用条件筛选消息，按 post 聚合展示删除预览，并附带发送状态、顺序和完整性检查结果。',
   advanced_sql: '手写sql查询消息，按post分组检查、删除消息',
-  id_range: '固定针对 chat_id=708424141 的 Telegram 消息 ID 区间做预览与逐条删除，不涉及数据库和文件处理。',
+  id_range: '固定针对 chat_id=708424141 的 Telegram 消息 ID 区间做预览、单条或批量删除，并可选择同步删除数据库记录。',
 }
 
 const TAB_LOG_FEATURES: Record<DeleteTab, string> = {
@@ -94,6 +96,8 @@ const TAB_LOG_FEATURES: Record<DeleteTab, string> = {
   advanced_sql: 'advanced_sql',
   id_range: 'id_range',
 }
+
+const MAX_RANGE_BATCH_DELETE = 50
 
 function createCondition(field = 'MESSAGE_ID', operator = 'gte'): QueryCondition {
   return {
@@ -161,17 +165,20 @@ export function MessageManagePage() {
   const [rangeCount, setRangeCount] = useState('')
   const [rangePreview, setRangePreview] = useState<RangePreviewData | null>(null)
   const [rangeResult, setRangeResult] = useState<RangeExecutionData | null>(null)
-  const [rangeSortOrder, setRangeSortOrder] = useState<RangeSortOrder>('asc')
+  const [rangeSortOrder, setRangeSortOrder] = useState<RangeSortOrder>('desc')
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>('non_complete')
   const [logs, setLogs] = useState<string[]>([])
   const [, setFeedback] = useState<string | null>(null)
   const [, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState<'sql-preview' | 'single-execute' | 'range-preview' | 'range-single-execute' | 'logs' | 'meta' | ''>('')
   const [rangeConfirmed, setRangeConfirmed] = useState(false)
+  const [rangeDeleteDb, setRangeDeleteDb] = useState(false)
   const [executeModal, setExecuteModal] = useState<ExecuteModalState>(null)
   const [builderProcessedPosts, setBuilderProcessedPosts] = useState<Record<string, SinglePostExecutionData>>({})
   const [advancedProcessedPosts, setAdvancedProcessedPosts] = useState<Record<string, SinglePostExecutionData>>({})
-  const [processedRangeMessages, setProcessedRangeMessages] = useState<Record<number, 'success' | 'failed'>>({})
+  const [processedRangeMessages, setProcessedRangeMessages] = useState<Record<number, RangeProcessState>>({})
+  const [selectedRangeMessageIds, setSelectedRangeMessageIds] = useState<number[]>([])
+  const [rangeDragMode, setRangeDragMode] = useState<RangeDragMode>(null)
   const [previewNotice, setPreviewNotice] = useState<PreviewNoticeState>(null)
   const [builderExpandedPosts, setBuilderExpandedPosts] = useState<ExpandedPostState>({})
   const [advancedExpandedPosts, setAdvancedExpandedPosts] = useState<ExpandedPostState>({})
@@ -180,6 +187,7 @@ export function MessageManagePage() {
   const [rangeQuerySignature, setRangeQuerySignature] = useState<string | null>(null)
   const [builderPreviewPayload, setBuilderPreviewPayload] = useState<SqlPreviewPayload | null>(null)
   const [advancedPreviewPayload, setAdvancedPreviewPayload] = useState<SqlPreviewPayload | null>(null)
+  const rangeListRef = useRef<HTMLDivElement | null>(null)
 
   const sqlPreview = activeTab === 'inspect'
     ? builderPreview
@@ -273,6 +281,7 @@ export function MessageManagePage() {
     ))
     return messages
   }, [rangePreview, rangeSortOrder])
+  const selectedRangeMessageSet = useMemo(() => new Set(selectedRangeMessageIds), [selectedRangeMessageIds])
   const rangeProcessedSummary = useMemo(() => {
     if (!rangePreview) {
       return {
@@ -726,6 +735,7 @@ export function MessageManagePage() {
     setPreviewNotice(null)
     setRangeResult(null)
     setProcessedRangeMessages({})
+    setSelectedRangeMessageIds([])
     try {
       const trimmedStartId = startId.trim()
       const trimmedEndId = endId.trim()
@@ -764,7 +774,7 @@ export function MessageManagePage() {
         end_id: String(data.end_id),
         range_count: String(data.message_count),
       }))
-      setRangeSortOrder('asc')
+      setRangeSortOrder('desc')
       setStartId(String(data.start_id))
       setEndId(String(data.end_id))
       setRangeCount(String(data.message_count))
@@ -784,16 +794,137 @@ export function MessageManagePage() {
     }
   }
 
-  async function executeSingleRangeDelete(messageId: number) {
+  function toggleRangeSelection(messageId: number, checked: boolean) {
+    if (checked && !selectedRangeMessageSet.has(messageId) && selectedRangeMessageIds.length >= MAX_RANGE_BATCH_DELETE) {
+      setPreviewNotice(createNotice(`批量删除最多选择 ${MAX_RANGE_BATCH_DELETE} 条消息。`, 'error'))
+      return
+    }
+    setSelectedRangeMessageIds((current) => {
+      if (checked) {
+        if (current.includes(messageId)) {
+          return current
+        }
+        return [...current, messageId]
+      }
+      return current.filter((item) => item !== messageId)
+    })
+  }
+
+  function applyRangeSelection(messageId: number, shouldSelect: boolean) {
+    if (processedRangeMessages[messageId] === 'success') {
+      return
+    }
+    toggleRangeSelection(messageId, shouldSelect)
+  }
+
+  function handleRangeItemMouseDown(event: ReactMouseEvent<HTMLElement>, messageId: number) {
+    const target = event.target as HTMLElement | null
+    if (target?.closest('.delete-range-caption, .delete-range-message-id, .delete-danger-button')) {
+      return
+    }
+    const shouldSelect = !selectedRangeMessageSet.has(messageId)
+    setRangeDragMode(shouldSelect ? 'select' : 'deselect')
+    applyRangeSelection(messageId, shouldSelect)
+  }
+
+  function handleRangeItemMouseEnter(messageId: number) {
+    if (!rangeDragMode) {
+      return
+    }
+    applyRangeSelection(messageId, rangeDragMode === 'select')
+  }
+
+  function handleRangeItemMouseUp() {
+    if (rangeDragMode) {
+      setRangeDragMode(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!rangeDragMode) {
+      return undefined
+    }
+
+    const stopDragSelection = () => setRangeDragMode(null)
+    window.addEventListener('mouseup', stopDragSelection)
+    return () => window.removeEventListener('mouseup', stopDragSelection)
+  }, [rangeDragMode])
+
+  useLayoutEffect(() => {
+    const container = rangeListRef.current
+    if (!container) {
+      return undefined
+    }
+
+    const syncRowHeights = () => {
+      const items = Array.from(container.querySelectorAll<HTMLElement>('.delete-range-item'))
+      if (!items.length) {
+        return
+      }
+
+      for (const item of items) {
+        item.style.height = 'auto'
+      }
+
+      const rows = new Map<number, HTMLElement[]>()
+      for (const item of items) {
+        const top = Math.round(item.offsetTop)
+        const rowItems = rows.get(top) ?? []
+        rowItems.push(item)
+        rows.set(top, rowItems)
+      }
+
+      for (const rowItems of rows.values()) {
+        const rowHeight = Math.max(...rowItems.map((item) => Math.max(item.offsetHeight, 142)))
+        for (const item of rowItems) {
+          item.style.height = `${rowHeight}px`
+        }
+      }
+    }
+
+    syncRowHeights()
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => syncRowHeights())
+      : null
+
+    if (resizeObserver) {
+      resizeObserver.observe(container)
+      for (const item of Array.from(container.querySelectorAll<HTMLElement>('.delete-range-item'))) {
+        resizeObserver.observe(item)
+      }
+    }
+
+    window.addEventListener('resize', syncRowHeights)
+    return () => {
+      window.removeEventListener('resize', syncRowHeights)
+      resizeObserver?.disconnect()
+    }
+  }, [processedRangeMessages, selectedRangeMessageIds, sortedRangeMessages])
+
+  async function executeRangeDelete(messageIds: number[]) {
     if (!rangePreview) {
       setError('请先生成 ID 区间预览。')
       setPreviewNotice(createNotice('请先生成 ID 区间预览。', 'error'))
       return
     }
 
+    const normalizedMessageIds = [...new Set(messageIds)].sort((left, right) => left - right)
+    if (!normalizedMessageIds.length) {
+      setPreviewNotice(createNotice('请先选择要删除的消息。', 'error'))
+      return
+    }
+    if (normalizedMessageIds.length > MAX_RANGE_BATCH_DELETE) {
+      setPreviewNotice(createNotice(`批量删除最多支持 ${MAX_RANGE_BATCH_DELETE} 条消息。`, 'error'))
+      return
+    }
+
     if (!rangeConfirmed) {
+      const deleteTargetText = normalizedMessageIds.length === 1
+        ? `消息 ${normalizedMessageIds[0]}`
+        : `${normalizedMessageIds.length} 条消息（${normalizedMessageIds[0]} - ${normalizedMessageIds[normalizedMessageIds.length - 1]}）`
       const confirmed = window.confirm(
-        `确认删除 chat_id=${rangePreview.chat_id} 中的消息 ${messageId} 吗？`,
+        `确认删除 chat_id=${rangePreview.chat_id} 中的${deleteTargetText}吗？${rangeDeleteDb ? '\n将同步删除数据库中的对应记录。' : ''}`,
       )
       if (!confirmed) {
         return
@@ -805,29 +936,51 @@ export function MessageManagePage() {
     setFeedback(null)
     try {
       const data = await postJson<RangeExecutionData>('/api/niceme/message-delete/id-range/execute', {
-        start_id: messageId,
-        end_id: messageId,
+        message_ids: normalizedMessageIds,
+        delete_db: rangeDeleteDb,
         confirm_execute: true,
       })
       setRangeResult(data)
+      const failedMessageIdSet = new Set(
+        data.telegram_failed
+          .map((item) => item.message_id)
+          .filter((item): item is number => typeof item === 'number'),
+      )
+      const nextStates = Object.fromEntries(
+        normalizedMessageIds.map((messageId) => [messageId, failedMessageIdSet.has(messageId) ? 'failed' : 'success']),
+      ) as Record<number, RangeProcessState>
       setProcessedRangeMessages((current) => ({
         ...current,
-        [messageId]: data.summary.telegram_failed > 0 ? 'failed' : 'success',
+        ...nextStates,
       }))
-      setFeedback(`消息 ${messageId} 删除执行完成。`)
-      setPreviewNotice(createNotice(`消息 ${messageId} 删除执行完成。`))
+      setSelectedRangeMessageIds((current) => current.filter((messageId) => !normalizedMessageIds.includes(messageId)))
+      const summaryMessage = data.summary.telegram_failed > 0
+        ? `删除完成，但有 ${data.summary.telegram_failed} 条失败。`
+        : `删除成功，共处理 ${data.summary.telegram_deleted} 条消息。${rangeDeleteDb ? ` 数据库同步删除 ${data.summary.db_deleted} 条。` : ''}`
+      setFeedback(summaryMessage)
+      setPreviewNotice(createNotice(summaryMessage, data.summary.telegram_failed > 0 ? 'error' : 'success'))
+      window.alert(summaryMessage)
       await refreshLogs()
     } catch (requestError) {
+      const failedStates = Object.fromEntries(
+        normalizedMessageIds.map((messageId) => [messageId, 'failed']),
+      ) as Record<number, RangeProcessState>
       setProcessedRangeMessages((current) => ({
         ...current,
-        [messageId]: 'failed',
+        ...failedStates,
       }))
-      setError(requestError instanceof Error ? requestError.message : 'ID 区间执行失败')
-      setPreviewNotice(createNotice(requestError instanceof Error ? requestError.message : 'ID 区间执行失败', 'error'))
+      const errorMessage = requestError instanceof Error ? requestError.message : 'ID 区间执行失败'
+      setError(errorMessage)
+      setPreviewNotice(createNotice(errorMessage, 'error'))
+      window.alert(errorMessage)
       await refreshLogs()
     } finally {
       setLoading('')
     }
+  }
+
+  async function executeSingleRangeDelete(messageId: number) {
+    await executeRangeDelete([messageId])
   }
 
   return (
@@ -1285,6 +1438,20 @@ export function MessageManagePage() {
                     >
                       {rangeSortOrder === 'asc' ? '排序：从小到大' : '排序：从大到小'}
                     </button>
+                    <button
+                      type="button"
+                      className="delete-danger-button"
+                      onClick={() => void executeRangeDelete(selectedRangeMessageIds)}
+                      disabled={loading === 'range-single-execute' || selectedRangeMessageIds.length === 0}
+                    >
+                      {loading === 'range-single-execute'
+                        ? '删除中...'
+                        : `批量删除（${selectedRangeMessageIds.length}/${MAX_RANGE_BATCH_DELETE}）`}
+                    </button>
+                    <label className="delete-check">
+                      <input type="checkbox" checked={rangeDeleteDb} onChange={(event) => setRangeDeleteDb(event.target.checked)} />
+                      <span>同步删除数据库数据</span>
+                    </label>
                     <label className="delete-check delete-check-danger">
                       <input type="checkbox" checked={rangeConfirmed} onChange={(event) => setRangeConfirmed(event.target.checked)} />
                       <span>开启后点击删除按钮直接执行，不再二次确认</span>
@@ -1312,35 +1479,50 @@ export function MessageManagePage() {
                       </article>
                     </div>
 
-                    <div className="delete-range-list">
-                      {sortedRangeMessages.map(({ message_id: messageId, caption }) => {
+                    <div ref={rangeListRef} className="delete-range-list">
+                      {sortedRangeMessages.map(({ message_id: messageId, content, source }) => {
                         const state = processedRangeMessages[messageId]
+                        const isSelected = selectedRangeMessageSet.has(messageId)
+                        const messageIdTitle = source === 'database' ? '该消息 ID 来自数据库记录' : '该消息 ID 为自动补齐展示，数据库中没有对应记录'
+                        const hasBottomState = state === 'success' || state === 'failed'
                         return (
                           <article
                             key={messageId}
-                            className={`delete-range-item${state === 'success' ? ' is-processed' : ''}${state === 'failed' ? ' is-failed' : ''}`}
+                            className={`delete-range-item${isSelected ? ' is-selected' : ''}${state === 'success' ? ' is-processed' : ''}${state === 'failed' ? ' is-failed' : ''}`}
+                            onMouseDown={(event) => handleRangeItemMouseDown(event, messageId)}
+                            onMouseEnter={() => handleRangeItemMouseEnter(messageId)}
+                            onMouseUp={handleRangeItemMouseUp}
                           >
                             <div className="delete-range-item-meta">
-                              <strong>{messageId}</strong>
-                              <div
-                                className={`delete-range-caption${caption ? '' : ' is-empty'}`}
-                                title={caption || ''}
+                              <strong
+                                className={`delete-range-message-id delete-range-message-id-${source}`}
+                                title={messageIdTitle}
                               >
-                                {caption || ''}
+                                {messageId}
+                              </strong>
+                              <div
+                                className={`delete-range-caption${content ? '' : ' is-empty'}`}
+                                title={content || ''}
+                              >
+                                {content || ''}
                               </div>
-                              <div className="delete-range-state">
-                                {state === 'success' ? <span className="delete-processed-tag">已删除</span> : null}
-                                {state === 'failed' ? <span className="delete-failed-tag">失败</span> : null}
-                              </div>
+                              {hasBottomState ? (
+                                <div className="delete-range-state">
+                                  {state === 'success' ? <span className="delete-processed-tag">已删除</span> : null}
+                                  {state === 'failed' ? <span className="delete-failed-tag">失败</span> : null}
+                                </div>
+                              ) : null}
                             </div>
                             <button
                               type="button"
                               className="delete-danger-button"
+                              onMouseDown={(event) => event.stopPropagation()}
                               onClick={() => void executeSingleRangeDelete(messageId)}
                               disabled={loading === 'range-single-execute' || state === 'success'}
                             >
                               {loading === 'range-single-execute' ? '删除中...' : '删除'}
                             </button>
+                            {isSelected ? <span className="delete-range-selected-corner">已选中</span> : null}
                           </article>
                         )
                       })}

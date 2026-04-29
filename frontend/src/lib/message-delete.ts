@@ -100,7 +100,8 @@ export type RangePreviewData = {
   message_ids: number[]
   messages: Array<{
     message_id: number
-    caption: string
+    content: string
+    source: 'database' | 'generated'
   }>
 }
 
