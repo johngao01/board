@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { getDocumentTitle, sidebarNavItems } from '../config/page-info'
 
@@ -38,11 +38,16 @@ export function AppShell() {
 
         <nav className="nav" aria-label="主导航">
           {sidebarNavItems.map((item) => (
-            <NavLink
+            <a
               key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => (isActive ? 'nav-item is-active' : 'nav-item')}
+              href={item.to}
+              target="_blank"
+              rel="noreferrer"
+              className={
+                (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to))
+                  ? 'nav-item is-active'
+                  : 'nav-item'
+              }
               title={item.label}
             >
               <span className="nav-badge" aria-hidden="true">
@@ -52,7 +57,7 @@ export function AppShell() {
                 <span className="nav-label">{item.label}</span>
                 <span className="nav-hint">{item.hint}</span>
               </span>
-            </NavLink>
+            </a>
           ))}
         </nav>
 
