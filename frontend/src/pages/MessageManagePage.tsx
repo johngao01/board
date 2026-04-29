@@ -954,12 +954,17 @@ export function MessageManagePage() {
         ...nextStates,
       }))
       setSelectedRangeMessageIds((current) => current.filter((messageId) => !normalizedMessageIds.includes(messageId)))
+      const failedReasonText = data.telegram_failed.length
+        ? ` 失败原因：${data.telegram_failed.map((item) => {
+            const messageIdText = typeof item.message_id === 'number' ? `消息 ${item.message_id}` : '消息删除'
+            return `${messageIdText} - ${item.error}`
+          }).join('；')}`
+        : ''
       const summaryMessage = data.summary.telegram_failed > 0
-        ? `删除完成，但有 ${data.summary.telegram_failed} 条失败。`
+        ? `删除完成，但有 ${data.summary.telegram_failed} 条失败。${failedReasonText}`
         : `删除成功，共处理 ${data.summary.telegram_deleted} 条消息。${rangeDeleteDb ? ` 数据库同步删除 ${data.summary.db_deleted} 条。` : ''}`
       setFeedback(summaryMessage)
       setPreviewNotice(createNotice(summaryMessage, data.summary.telegram_failed > 0 ? 'error' : 'success'))
-      window.alert(summaryMessage)
       await refreshLogs()
     } catch (requestError) {
       const failedStates = Object.fromEntries(
@@ -972,7 +977,6 @@ export function MessageManagePage() {
       const errorMessage = requestError instanceof Error ? requestError.message : 'ID 区间执行失败'
       setError(errorMessage)
       setPreviewNotice(createNotice(errorMessage, 'error'))
-      window.alert(errorMessage)
       await refreshLogs()
     } finally {
       setLoading('')
@@ -1479,7 +1483,10 @@ export function MessageManagePage() {
                       </article>
                     </div>
 
-                    <div ref={rangeListRef} className="delete-range-list">
+                    <div
+                      ref={rangeListRef}
+                      className={`delete-range-list${rangeDragMode ? ' is-drag-selecting' : ''}`}
+                    >
                       {sortedRangeMessages.map(({ message_id: messageId, content, source }) => {
                         const state = processedRangeMessages[messageId]
                         const isSelected = selectedRangeMessageSet.has(messageId)

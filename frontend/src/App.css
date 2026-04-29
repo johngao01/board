@@ -591,6 +591,12 @@
   padding-right: 4px;
 }
 
+.delete-range-list.is-drag-selecting,
+.delete-range-list.is-drag-selecting * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 .delete-range-item {
   position: relative;
   display: flex;
