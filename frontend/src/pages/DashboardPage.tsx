@@ -585,20 +585,30 @@ export function DashboardPage() {
             backgroundColor: 'transparent',
             tooltip: {
                 trigger: 'axis',
-                formatter: (params: Array<{ axisValue?: string; seriesName?: string; data?: number }>) => {
-                    if (params.length === 0) {
+                formatter: (params: unknown) => {
+                    const items = Array.isArray(params) ? params : [params]
+                    if (items.length === 0) {
                         return ''
                     }
 
-                    const date = params[0]?.axisValue ?? ''
-                    const lines = params
+                    const firstItem = items[0]
+                    const date =
+                        typeof firstItem === 'object' && firstItem !== null && 'axisValue' in firstItem
+                            ? String(firstItem.axisValue ?? '')
+                            : ''
+                    const lines = items
                         .map((item) => {
-                            const platform = item.seriesName ?? ''
-                            const messageValue = typeof item.data === 'number' ? item.data : 0
+                            if (typeof item !== 'object' || item === null) {
+                                return ''
+                            }
+                            const platform = 'seriesName' in item ? String(item.seriesName ?? '') : ''
+                            const rawValue = 'data' in item ? item.data : 0
+                            const messageValue = typeof rawValue === 'number' ? rawValue : Number(rawValue ?? 0)
                             const worksValue =
                                 platformHistory.works[platform]?.[platformHistory.dates.indexOf(date)] ?? 0
                             return `${platform}<br/>消息: ${messageValue} / 作品: ${worksValue}`
                         })
+                        .filter(Boolean)
                         .join('<br/><br/>')
 
                     return `${date}<br/>${lines}`
