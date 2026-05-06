@@ -24,14 +24,18 @@ export type NicemeResponse = {
       users: number[]
       works: number[]
     }
+    platform_history_7d: {
+      dates: string[]
+      platforms: string[]
+      messages: Record<string, number[]>
+      works: Record<string, number[]>
+    }
   }
 }
 
 export type WorksDistResponse = {
   total: number
   platforms: Record<string, number>
-  types: Record<string, number>
-  prev_str: string
 }
 
 export type TiktokMetricResponse = {
@@ -43,6 +47,7 @@ export type TiktokMetricResponse = {
 export type MessageListResponse = {
   data: Array<{
     id: number
+    idstr: string
     time: string
     username: string
     text: string
@@ -52,6 +57,7 @@ export type MessageListResponse = {
     file_type: string
     caption: string
     url: string
+    valid?: number | null
   }>
 }
 

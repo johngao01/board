@@ -874,6 +874,7 @@ a {
 .chart-wrap {
   min-width: 0;
   display: flex;
+  flex: 1 1 0;
 }
 
 .chart-wrap-small {
@@ -956,9 +957,12 @@ a {
   border: none;
   background: transparent;
   color: #6f8198;
-  padding: 6px 0 12px;
+  width: 100%;
+  justify-content: space-between;
+  padding: 8px 0 12px;
   font-size: 14px;
   cursor: pointer;
+  font-weight: 700;
 }
 
 .dashboard-card-grid {
@@ -974,7 +978,7 @@ a {
 
 .chart-card {
   padding: 14px;
-  min-height: 432px;
+  min-height: 500px;
 }
 
 .chart-card-small {
@@ -985,6 +989,62 @@ a {
 .chart-card-large {
   flex: 1 1 auto;
   width: 100%;
+}
+
+.platform-history-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+  align-items: stretch;
+}
+
+.platform-history-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.platform-history-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.platform-history-grid > .chart-card,
+.platform-history-grid > .platform-history-card {
+  min-width: 0;
+}
+
+.platform-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 16px 18px 12px;
+}
+
+.platform-history-header h4,
+.platform-history-header p {
+  margin: 0;
+}
+
+.platform-history-header h4 {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.platform-history-header p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+}
+
+.platform-history-empty-tip {
+  padding: 0 4px 4px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .inline-metric-button {
@@ -1463,6 +1523,7 @@ a {
   }
 
   .dashboard-chart-row,
+  .platform-history-grid,
   .user-layout,
   .panel-grid,
   .juhe-panel-grid,
